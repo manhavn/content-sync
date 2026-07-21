@@ -645,6 +645,10 @@ impl ConfigDb {
             .connection_id
             .clone()
             .unwrap_or_else(|| "local".to_string());
+        // Always derive local PK from (connection_id, file_name). Using remote `rec.id`
+        // breaks when two connections share one remote table (same remote ids, different
+        // watch dirs) — INSERT would hit PRIMARY KEY on id while (conn, name) is new.
+        let local_id = file_cache_row_id(&conn_id, &rec.file_name);
         let conn = self.conn.lock();
         conn.execute(
             r#"
@@ -652,13 +656,14 @@ impl ConfigDb {
                 id, connection_id, file_name, file_path, content, content_hash, updated_at
             ) VALUES(?1,?2,?3,?4,?5,?6,?7)
             ON CONFLICT(connection_id, file_name) DO UPDATE SET
+                id           = excluded.id,
                 file_path    = excluded.file_path,
                 content      = excluded.content,
                 content_hash = excluded.content_hash,
                 updated_at   = excluded.updated_at
             "#,
             params![
-                rec.id,
+                local_id,
                 conn_id,
                 rec.file_name,
                 rec.file_path,

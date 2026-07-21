@@ -42,6 +42,20 @@ pub struct FileRecord {
     pub connection_id: Option<String>,
 }
 
+/// Local `file_cache` primary key for a (connection, file_name) pair.
+///
+/// Must **not** reuse the remote row `id`: two connections can share the same remote
+/// DB/table (same remote ids) while pointing at different local watch dirs. Remote ids
+/// would then collide on `file_cache.id` (global PRIMARY KEY) even though
+/// `UNIQUE(connection_id, file_name)` is still satisfied.
+pub fn file_cache_row_id(connection_id: &str, file_name: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(connection_id.as_bytes());
+    hasher.update([0xff]);
+    hasher.update(file_name.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
 impl FileRecord {
     pub fn from_content(
         file_name: &str,

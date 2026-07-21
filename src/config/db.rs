@@ -631,6 +631,11 @@ impl ConfigDb {
 
     pub fn delete_connection(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock();
+        // Cascade: every local row keyed by this connection
+        conn.execute(
+            "DELETE FROM file_cache WHERE connection_id = ?1",
+            params![id],
+        )?;
         let n = conn.execute("DELETE FROM connections WHERE id = ?1", params![id])?;
         if n == 0 {
             return Err(anyhow!("connection not found"));

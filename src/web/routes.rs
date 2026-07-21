@@ -416,6 +416,8 @@ async fn delete_connection(
         .db
         .delete_connection(&id)
         .map_err(ApiError::internal)?;
+    // file_cache rows cascade in delete_connection; clear runtime maps too
+    state.forget_connection(&id);
     state.request_reload();
     Ok(Json(serde_json::json!({ "ok": true })))
 }

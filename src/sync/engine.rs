@@ -61,6 +61,15 @@ impl AppState {
         self.reload_flag.store(true, Ordering::SeqCst);
     }
 
+    /// Drop in-memory state for a deleted connection (backoff, schema flag, remote hashes).
+    pub fn forget_connection(&self, connection_id: &str) {
+        self.backoff.write().remove(connection_id);
+        self.schema_ready.write().remove(connection_id);
+        self.last_pushed_hash
+            .write()
+            .retain(|(cid, _), _| cid != connection_id);
+    }
+
     pub fn take_reload(&self) -> bool {
         self.reload_flag.swap(false, Ordering::SeqCst)
     }

@@ -195,6 +195,20 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .badge.off { background: rgba(139,155,176,0.15); color: var(--muted); }
 .badge.err { background: rgba(243,18,96,0.15); color: #ff6b9a; }
 
+/* Pagination */
+.pager {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin-top: 12px; font-size: 12px; color: var(--muted);
+}
+.pager.hidden { display: none; }
+.pager-info { min-width: 0; }
+.pager-btns { display: flex; align-items: center; gap: 6px; }
+.pager-page {
+  min-width: 4.5em; text-align: center; font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.pager .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Modal */
 .modal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.55);

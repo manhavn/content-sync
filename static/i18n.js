@@ -129,6 +129,14 @@ const I18N = {
     // modal
     cancel: "Cancel",
     save: "Save",
+
+    // pagination
+    pager_info: "Showing {from}–{to} of {total}",
+    pager_page: "{page} / {totalPages}",
+    pager_first: "First page",
+    pager_prev: "Previous page",
+    pager_next: "Next page",
+    pager_last: "Last page",
   },
   vi: {
     app_name: "Content Sync",
@@ -251,6 +259,14 @@ const I18N = {
 
     cancel: "Huỷ",
     save: "Lưu",
+
+    // pagination
+    pager_info: "Hiển thị {from}–{to} / {total}",
+    pager_page: "{page} / {totalPages}",
+    pager_first: "Trang đầu",
+    pager_prev: "Trang trước",
+    pager_next: "Trang sau",
+    pager_last: "Trang cuối",
   },
 };
 

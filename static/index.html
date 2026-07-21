@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Content Sync</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Login -->
+    <section id="login-view" class="center-card hidden">
+      <div class="lang-float">
+        <label class="lang-toggle" title="Language">
+          <span class="lang-label">EN</span>
+          <input type="checkbox" class="lang-switch" aria-label="Language" />
+          <span class="lang-slider"></span>
+          <span class="lang-label">VI</span>
+        </label>
+      </div>
+      <div class="card login-card">
+        <div class="brand">
+          <div class="logo">CS</div>
+          <div>
+            <h1 data-i18n="app_name">Content Sync</h1>
+            <p class="muted" data-i18n="brand_tagline">Raw file sync · Bunny / libSQL</p>
+          </div>
+        </div>
+        <label data-i18n="access_token">Access token</label>
+        <input id="login-token" type="password" placeholder="sa_…" autocomplete="off" />
+        <button id="btn-login" class="btn primary full" data-i18n="login">Sign in</button>
+        <p id="login-error" class="error"></p>
+        <p class="hint" data-i18n="login_hint" data-i18n-html>Create a token via CLI: <code>content-sync token create --name admin</code></p>
+      </div>
+    </section>
+
+    <!-- Main -->
+    <section id="main-view" class="hidden">
+      <aside class="sidebar">
+        <div class="brand side">
+          <div class="logo sm">CS</div>
+          <div>
+            <strong data-i18n="app_name">Content Sync</strong>
+            <div class="muted small" id="user-name">—</div>
+          </div>
+        </div>
+        <nav>
+          <button data-tab="dashboard" class="nav active" data-i18n="nav_dashboard">Dashboard</button>
+          <button data-tab="files" class="nav" data-i18n="nav_files">Files</button>
+          <button data-tab="connections" class="nav" data-i18n="nav_connections">Connections</button>
+          <button data-tab="auth-tokens" class="nav" data-i18n="nav_auth_tokens">Auth Tokens</button>
+          <button data-tab="settings" class="nav" data-i18n="nav_settings">Settings</button>
+        </nav>
+        <div class="sidebar-foot">
+          <label class="lang-toggle sidebar-lang" title="Language">
+            <span class="lang-label">EN</span>
+            <input type="checkbox" class="lang-switch" aria-label="Language" />
+            <span class="lang-slider"></span>
+            <span class="lang-label">VI</span>
+          </label>
+          <button id="btn-logout" class="btn ghost full" data-i18n="logout">Sign out</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <!-- Dashboard -->
+        <div id="tab-dashboard" class="tab">
+          <header class="page-head">
+            <h2 data-i18n="dashboard">Dashboard</h2>
+            <button id="btn-sync" class="btn primary" data-i18n="sync_now">Sync now</button>
+          </header>
+          <div class="grid stats" id="stats"></div>
+          <h3 data-i18n="sync_log">Sync log</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="th_time">Time</th>
+                  <th data-i18n="th_level">Level</th>
+                  <th data-i18n="th_message">Message</th>
+                </tr>
+              </thead>
+              <tbody id="sync-log-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Files (raw content) -->
+        <div id="tab-files" class="tab hidden">
+          <header class="page-head">
+            <h2 data-i18n="files_title">Files</h2>
+            <button id="btn-file-new" class="btn primary" data-i18n="files_add">+ Add file</button>
+          </header>
+          <p class="muted" data-i18n="files_help">Synced files under the watch directory. Content is stored as raw text (any format).</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="th_file">File</th>
+                  <th data-i18n="th_connection">Connection</th>
+                  <th data-i18n="th_path">Path</th>
+                  <th data-i18n="th_size">Size</th>
+                  <th data-i18n="th_updated">Updated</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="files-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Connections -->
+        <div id="tab-connections" class="tab hidden">
+          <header class="page-head">
+            <h2 data-i18n="conn_title">Database Connections</h2>
+            <button id="btn-conn-new" class="btn primary" data-i18n="conn_add">+ Connection</button>
+          </header>
+          <p class="muted" data-i18n="conn_help" data-i18n-html>Enable/disable each connection to sync multiple Bunny DBs. Only <strong>enabled</strong> connections are pulled/pushed.</p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="th_name">Name</th>
+                  <th data-i18n="th_driver">Driver</th>
+                  <th data-i18n="th_table">Table</th>
+                  <th data-i18n="th_watch_dir">Watch dir</th>
+                  <th data-i18n="th_url">URL</th>
+                  <th data-i18n="th_status">Status</th>
+                  <th data-i18n="th_last_sync">Last sync</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="conn-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Auth tokens -->
+        <div id="tab-auth-tokens" class="tab hidden">
+          <header class="page-head">
+            <h2 data-i18n="auth_title">Auth Tokens (Web UI login)</h2>
+            <button id="btn-auth-new" class="btn primary" data-i18n="auth_add">+ Create token</button>
+          </header>
+          <p class="muted" data-i18n="auth_help">Tokens used to sign in to the Web UI / API. The raw token is shown only once when created.</p>
+          <div id="raw-token-banner" class="banner hidden"></div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th data-i18n="th_name">Name</th>
+                  <th data-i18n="th_prefix">Prefix</th>
+                  <th data-i18n="th_enabled">Enabled</th>
+                  <th data-i18n="th_created">Created</th>
+                  <th data-i18n="th_last_used">Last used</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="auth-body"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Settings -->
+        <div id="tab-settings" class="tab hidden">
+          <header class="page-head"><h2 data-i18n="settings_title">Settings</h2></header>
+          <div class="card form-card">
+            <label data-i18n="label_watch_dir">Default files root (fallback for new connections)</label>
+            <input id="set-watch-dir" type="text" />
+            <label data-i18n="label_poll">Poll interval (seconds) — periodic pull when healthy</label>
+            <input id="set-poll" type="number" min="5" />
+            <label data-i18n="label_backoff">Error backoff base (seconds)</label>
+            <input id="set-error-backoff" type="number" min="30" />
+            <label data-i18n="label_backoff_max">Error backoff max (seconds)</label>
+            <input id="set-error-backoff-max" type="number" min="60" />
+            <label data-i18n="label_log_retention">Log retention (hours)</label>
+            <input id="set-log-retention" type="number" min="0" placeholder="48" />
+            <label data-i18n="label_web_bind">Web bind (restart CLI to apply)</label>
+            <input id="set-bind" type="text" />
+            <button id="btn-save-settings" class="btn primary" data-i18n="save_settings">Save settings</button>
+            <p id="settings-msg" class="muted"></p>
+          </div>
+        </div>
+      </main>
+    </section>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal hidden">
+    <div class="modal-card">
+      <header class="page-head">
+        <h3 id="modal-title">—</h3>
+        <button class="btn ghost" id="modal-close">✕</button>
+      </header>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" id="modal-cancel" data-i18n="cancel">Cancel</button>
+        <button class="btn primary" id="modal-save" data-i18n="save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/i18n.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

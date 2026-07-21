@@ -245,7 +245,7 @@ function renderFilesPage() {
   $("#files-body").innerHTML = meta.items.map((f) => `
     <tr>
       <td><strong>${esc(f.file_name)}</strong></td>
-      <td class="muted">${esc(f.connection_name || f.connection_id || "—")}</td>
+      <td class="muted" title="${escAttr(f.connection_id || "")}">${esc(f.connection_name || (f.connection_id ? t("conn_missing") : "—"))}</td>
       <td class="muted" style="max-width:240px;overflow:hidden;text-overflow:ellipsis" title="${escAttr(f.file_path || "")}">
         <code>${esc(f.file_path || "—")}</code>
       </td>

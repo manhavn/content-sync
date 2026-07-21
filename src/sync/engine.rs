@@ -800,11 +800,44 @@ pub async fn delete_local_and_remote(
     connection_id: &str,
     file_name: &str,
 ) -> Result<()> {
-    let conn = state
-        .db
-        .get_connection(connection_id)?
-        .ok_or_else(|| anyhow::anyhow!("connection not found"))?;
     let file_name = validate_file_name(file_name)?;
+
+    // Path from cache (helps orphan rows after the connection was deleted)
+    let cached_path = state
+        .db
+        .list_file_cache()?
+        .into_iter()
+        .find(|r| r.file_name == file_name && r.connection_id.as_deref() == Some(connection_id))
+        .and_then(|r| {
+            if r.file_path.is_empty() {
+                None
+            } else {
+                Some(PathBuf::from(r.file_path))
+            }
+        });
+
+    // Always drop local cache + runtime maps first so UI delete works for orphans
+    state.db.delete_file_cache(connection_id, &file_name)?;
+    state
+        .last_pushed_hash
+        .write()
+        .remove(&(connection_id.to_string(), file_name.clone()));
+
+    let Some(conn) = state.db.get_connection(connection_id)? else {
+        // Connection already gone — still remove on-disk file if we know the path
+        if let Some(path) = cached_path {
+            if path.exists() {
+                state
+                    .suppress_paths
+                    .write()
+                    .insert(path.clone(), String::new());
+                let _ = std::fs::remove_file(&path);
+            }
+        }
+        info!("deleted orphan file_cache entry {file_name} (connection {connection_id} not found)");
+        return Ok(());
+    };
+
     let path = PathBuf::from(&conn.watch_dir).join(&file_name);
     if path.exists() {
         state
@@ -813,11 +846,6 @@ pub async fn delete_local_and_remote(
             .insert(path.clone(), String::new());
         std::fs::remove_file(&path)?;
     }
-    state.db.delete_file_cache(&conn.id, &file_name)?;
-    state
-        .last_pushed_hash
-        .write()
-        .remove(&(conn.id.clone(), file_name.clone()));
 
     if conn.enabled && !state.is_in_backoff(&conn.id) {
         let settings = state.db.get_settings()?;

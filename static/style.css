@@ -193,11 +193,28 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   display: grid; place-items: center; z-index: 50; padding: 16px;
 }
 .modal-card {
-  width: min(520px, 100%); background: var(--bg2); border: 1px solid var(--border);
+  width: min(960px, 100%);
+  max-height: min(92vh, 100%);
+  background: var(--bg2); border: 1px solid var(--border);
   border-radius: 14px; padding: 20px; box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-.modal-card #modal-body { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 18px; }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.modal-card > .page-head { flex-shrink: 0; margin-bottom: 0; }
+.modal-card #modal-body {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 12px 0 18px; min-height: 0; flex: 1;
+}
+/* File content editor grows and scrolls inside the modal */
+.modal-card #m-file-content {
+  flex: 1; min-height: 280px; resize: vertical;
+  font-family: var(--mono); font-size: 12px; line-height: 1.45;
+  overflow: auto;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
 
 /* Banner / toast */
 .banner {

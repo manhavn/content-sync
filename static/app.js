@@ -240,7 +240,7 @@ async function openFileModal(connectionId, fileName) {
     <label>${esc(t("label_file_name"))}</label>
     <input id="m-file-name" value="${escAttr(name)}" ${fileName ? "readonly" : ""} placeholder="token.json" />
     <label>${esc(t("label_raw_content"))}</label>
-    <textarea id="m-file-content" rows="16" style="font-family:var(--mono);font-size:12px;line-height:1.45">${esc(content)}</textarea>`;
+    <textarea id="m-file-content" rows="24">${esc(content)}</textarea>`;
   openModal(async () => {
     const body = {
       connection_id: $("#m-file-conn").value,
@@ -442,7 +442,6 @@ $("#btn-auth-new").onclick = () => {
 async function loadSettings() {
   try {
     const s = await api("/api/settings");
-    $("#set-watch-dir").value = s.default_files_root || s.watch_dir || "";
     $("#set-poll").value = s.poll_interval_secs || 30;
     $("#set-error-backoff").value = s.error_backoff_secs || 120;
     $("#set-error-backoff-max").value = s.error_backoff_max_secs || 900;
@@ -456,10 +455,7 @@ async function loadSettings() {
 
 $("#btn-save-settings").onclick = async () => {
   try {
-    const root = $("#set-watch-dir").value.trim();
     const body = {
-      watch_dir: root,
-      default_files_root: root,
       poll_interval_secs: Number($("#set-poll").value) || 30,
       error_backoff_secs: Number($("#set-error-backoff").value) || 120,
       error_backoff_max_secs: Number($("#set-error-backoff-max").value) || 900,

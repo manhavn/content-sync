@@ -224,15 +224,57 @@ async fn get_settings(
     Ok(Json(s))
 }
 
+/// Partial settings update. Watch dirs live on connections; `watch_dir` /
+/// `default_files_root` are optional legacy fields and only overwrite when sent.
+#[derive(Deserialize)]
+struct SettingsUpdate {
+    #[serde(default)]
+    default_files_root: Option<String>,
+    #[serde(default)]
+    watch_dir: Option<String>,
+    #[serde(default)]
+    poll_interval_secs: Option<u64>,
+    #[serde(default)]
+    error_backoff_secs: Option<u64>,
+    #[serde(default)]
+    error_backoff_max_secs: Option<u64>,
+    #[serde(default)]
+    log_retention_hours: Option<u64>,
+    #[serde(default)]
+    web_bind: Option<String>,
+}
+
 async fn put_settings(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
-    Json(body): Json<Settings>,
+    Json(body): Json<SettingsUpdate>,
 ) -> Result<Json<Settings>, ApiError> {
     require_auth(&state, &headers).await?;
-    state.db.save_settings(&body).map_err(ApiError::internal)?;
+    let mut s = state.db.get_settings().map_err(ApiError::internal)?;
+    if let Some(v) = body.default_files_root {
+        s.default_files_root = v;
+    }
+    if let Some(v) = body.watch_dir {
+        s.watch_dir = v;
+    }
+    if let Some(v) = body.poll_interval_secs {
+        s.poll_interval_secs = v;
+    }
+    if let Some(v) = body.error_backoff_secs {
+        s.error_backoff_secs = v;
+    }
+    if let Some(v) = body.error_backoff_max_secs {
+        s.error_backoff_max_secs = v;
+    }
+    if let Some(v) = body.log_retention_hours {
+        s.log_retention_hours = v;
+    }
+    if let Some(v) = body.web_bind {
+        s.web_bind = v;
+    }
+    state.db.save_settings(&s).map_err(ApiError::internal)?;
     state.request_reload();
-    Ok(Json(body))
+    Ok(Json(s))
 }
 
 // ── Connections ───────────────────────────────────────────────

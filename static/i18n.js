@@ -117,7 +117,6 @@ const I18N = {
 
     // settings
     settings_title: "Settings",
-    label_watch_dir: "Watch directory (local files to sync)",
     label_poll: "Poll interval (seconds) — periodic pull when healthy",
     label_backoff: "Error backoff base (seconds) — wait longer after remote failures (rate limit)",
     label_backoff_max: "Error backoff max (seconds) — exponential backoff cap",
@@ -241,7 +240,6 @@ const I18N = {
     token_created: "Token đã tạo — hãy copy raw token",
 
     settings_title: "Settings",
-    label_watch_dir: "Watch directory (file local để sync)",
     label_poll: "Poll interval (giây) — pull định kỳ khi healthy",
     label_backoff: "Error backoff base (giây) — chờ lâu hơn khi remote fail (tránh rate limit)",
     label_backoff_max: "Error backoff max (giây) — trần exponential backoff",

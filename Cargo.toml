@@ -47,6 +47,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
+libc = "0.2"
 thiserror = "2"
 anyhow = "1"
 tracing = "0.1"

@@ -89,11 +89,16 @@ content-sync serve
 | Command | Description |
 |---------|-------------|
 | `content-sync init` | Create `~/.content-sync`, settings, admin auth token |
-| `content-sync serve` | Web UI + file watcher + poll sync |
+| `content-sync serve` | Web UI + file watcher + poll sync (foreground) |
 | `content-sync serve --bind 0.0.0.0:8787` | Custom bind address |
 | `content-sync serve --no-sync` | Web/API only, no watcher |
+| `content-sync serve --no-log` | Silence runtime logs (tracing + serve banner) |
+| `content-sync background` | Same as `serve`, but runs as a background daemon |
+| `content-sync background --bind 0.0.0.0:8787` | Background with custom bind |
+| `content-sync background --no-log` | Background with silent core logs (no `content-sync.log`) |
+| `content-sync quit` | Stop the background daemon |
 | `content-sync sync` | One-shot sync, then exit |
-| `content-sync status` | Show configuration |
+| `content-sync status` | Show configuration (includes background PID status) |
 | `content-sync token create --name laptop` | Create Web UI login token |
 | `content-sync token show admin` | Print raw admin token |
 | `content-sync token list` / `delete` / `set` | Manage auth tokens |
@@ -119,6 +124,8 @@ Remote schema (every SQL driver / Mongo document): `id`, `file_name` (unique), `
 |------|----------|
 | `~/.content-sync/config.sqlite` | Auth tokens, connections, settings, cache, sessions |
 | `~/.content-sync/files/<name>/` | Default watch dir per connection (one dir each) |
+| `~/.content-sync/content-sync.pid` | PID of the background daemon (`background` / `quit`) |
+| `~/.content-sync/content-sync.log` | stdout/stderr of the background daemon |
 
 ## Web UI
 

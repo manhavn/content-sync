@@ -89,11 +89,16 @@ content-sync serve
 | Lệnh | Mô tả |
 |------|--------|
 | `content-sync init` | Tạo `~/.content-sync`, settings, auth token admin |
-| `content-sync serve` | Web UI + file watcher + poll sync |
+| `content-sync serve` | Web UI + file watcher + poll sync (foreground) |
 | `content-sync serve --bind 0.0.0.0:8787` | Bind tùy chỉnh |
 | `content-sync serve --no-sync` | Chỉ Web/API, không watcher |
+| `content-sync serve --no-log` | Tắt log runtime (tracing + banner serve) |
+| `content-sync background` | Giống `serve`, chạy nền (daemon) |
+| `content-sync background --bind 0.0.0.0:8787` | Chạy nền với bind tùy chỉnh |
+| `content-sync background --no-log` | Chạy nền, tắt log core (không ghi `content-sync.log`) |
+| `content-sync quit` | Dừng process background |
 | `content-sync sync` | Đồng bộ 1 lần rồi thoát |
-| `content-sync status` | Xem cấu hình |
+| `content-sync status` | Xem cấu hình (kèm trạng thái background) |
 | `content-sync token create --name laptop` | Tạo token login Web UI |
 | `content-sync token show admin` | In raw token |
 | `content-sync token list` / `delete` / `set` | Quản lý auth tokens |
@@ -119,6 +124,8 @@ Remote schema (mọi driver SQL / Mongo document): `id`, `file_name` (unique), `
 |------|----------|
 | `~/.content-sync/config.sqlite` | Auth tokens, connections, settings, cache, sessions |
 | `~/.content-sync/files/<name>/` | Watch dir mặc định theo connection (mỗi connection một dir) |
+| `~/.content-sync/content-sync.pid` | PID daemon background (`background` / `quit`) |
+| `~/.content-sync/content-sync.log` | stdout/stderr của daemon background |
 
 ## Web UI
 

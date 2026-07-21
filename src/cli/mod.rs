@@ -17,6 +17,16 @@ pub struct Cli {
     pub command: Commands,
 }
 
+impl Cli {
+    /// Whether this invocation should silence runtime tracing / serve logs.
+    pub fn no_log(&self) -> bool {
+        match &self.command {
+            Commands::Serve { no_log, .. } | Commands::Background { no_log, .. } => *no_log,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Initialize config directory and default settings
@@ -26,7 +36,7 @@ pub enum Commands {
         watch_dir: Option<String>,
     },
 
-    /// Start Web UI + file watcher + sync engine
+    /// Start Web UI + file watcher + sync engine (foreground)
     Serve {
         /// Bind address (overrides settings)
         #[arg(long, short)]
@@ -34,7 +44,26 @@ pub enum Commands {
         /// Disable background file watcher / poll (API only)
         #[arg(long)]
         no_sync: bool,
+        /// Disable runtime logs (tracing + serve banner)
+        #[arg(long)]
+        no_log: bool,
     },
+
+    /// Start Web UI + file watcher + sync engine in the background (daemon)
+    Background {
+        /// Bind address (overrides settings)
+        #[arg(long, short)]
+        bind: Option<String>,
+        /// Disable background file watcher / poll (API only)
+        #[arg(long)]
+        no_sync: bool,
+        /// Disable runtime logs and do not write the background log file
+        #[arg(long)]
+        no_log: bool,
+    },
+
+    /// Stop the background process started by `background`
+    Quit,
 
     /// Run a one-shot bidirectional sync and exit
     Sync,
@@ -201,6 +230,17 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 println!("Log retention  : {}h", s.log_retention_hours);
             }
             println!("Web bind       : {}", s.web_bind);
+            match config::read_daemon_pid() {
+                Some(pid) if config::process_alive(pid) => {
+                    println!("Background     : running (pid {pid})");
+                }
+                Some(pid) => {
+                    println!("Background     : not running (stale pid {pid})");
+                }
+                None => {
+                    println!("Background     : not running");
+                }
+            }
             println!("Auth tokens    : {}", tokens.len());
             println!(
                 "Connections    : {} ({} enabled)",
@@ -379,7 +419,11 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             Ok(())
         }
 
-        Commands::Serve { bind, no_sync } => {
+        Commands::Serve {
+            bind,
+            no_sync,
+            no_log,
+        } => {
             let mut settings = db.get_settings()?;
             if let Some(b) = bind {
                 settings.web_bind = b;
@@ -400,13 +444,15 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let app = crate::web::router(Arc::clone(&state));
             let listener = tokio::net::TcpListener::bind(&settings.web_bind).await?;
             let addr = listener.local_addr()?;
-            info!("Web UI listening on http://{addr}");
-            println!("Content Sync Web UI → http://{addr}");
-            println!("Config            → {}", config::config_dir().display());
-            println!("Press Ctrl+C to stop.");
+            if !no_log {
+                info!("Web UI listening on http://{addr}");
+                println!("Content Sync Web UI → http://{addr}");
+                println!("Config            → {}", config::config_dir().display());
+                println!("Press Ctrl+C to stop.");
+            }
 
             let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
-                let _ = tokio::signal::ctrl_c().await;
+                wait_shutdown_signal().await;
                 info!("shutdown signal");
                 let _ = shutdown_tx.send(true);
             });
@@ -415,7 +461,227 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             if let Some(h) = sync_handle {
                 let _ = h.await;
             }
+            // Clear pid file if this process was the daemon
+            if let Some(pid) = config::read_daemon_pid() {
+                if pid == std::process::id() {
+                    config::remove_daemon_pid();
+                }
+            }
             Ok(())
         }
+
+        Commands::Background {
+            bind,
+            no_sync,
+            no_log,
+        } => start_background(bind, no_sync, no_log),
+
+        Commands::Quit => quit_background(),
     }
+}
+
+/// Wait for Ctrl+C (SIGINT) or SIGTERM (used by `content-sync quit`).
+async fn wait_shutdown_signal() {
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut sig) => {
+                let _ = sig.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+}
+
+fn start_background(bind: Option<String>, no_sync: bool, no_log: bool) -> anyhow::Result<()> {
+    if let Some(pid) = config::read_daemon_pid() {
+        if config::process_alive(pid) {
+            anyhow::bail!(
+                "already running in background (pid {pid}). Stop it first: content-sync quit"
+            );
+        }
+        // Stale pid file from a previous crash
+        config::remove_daemon_pid();
+    }
+
+    let exe = std::env::current_exe()
+        .map_err(|e| anyhow::anyhow!("cannot resolve current executable: {e}"))?;
+    let log_path = config::background_log_path();
+    config::ensure_config_dir()?;
+
+    let mut cmd = std::process::Command::new(&exe);
+    cmd.arg("serve");
+    if let Some(ref b) = bind {
+        cmd.arg("--bind").arg(b);
+    }
+    if no_sync {
+        cmd.arg("--no-sync");
+    }
+    if no_log {
+        // Core serve also silences tracing / banner.
+        cmd.arg("--no-log");
+    }
+    cmd.stdin(std::process::Stdio::null());
+
+    if no_log {
+        cmd.stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+    } else {
+        let log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_path)
+            .map_err(|e| anyhow::anyhow!("cannot open log {}: {e}", log_path.display()))?;
+        let log_err = log_file
+            .try_clone()
+            .map_err(|e| anyhow::anyhow!("cannot clone log handle: {e}"))?;
+        cmd.stdout(std::process::Stdio::from(log_file))
+            .stderr(std::process::Stdio::from(log_err));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // New session so the daemon is not killed when the terminal closes (SIGHUP).
+        unsafe {
+            cmd.pre_exec(|| {
+                if libc::setsid() == -1 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+    }
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to start background process: {e}"))?;
+    let pid = child.id();
+
+    // Give the child a moment to bind the port / crash early (e.g. address in use).
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    match child.try_wait() {
+        Ok(Some(status)) => {
+            config::remove_daemon_pid();
+            if no_log {
+                anyhow::bail!(
+                    "background process exited immediately (pid {pid}, {status}). \
+                     Re-run without --no-log to capture error output."
+                );
+            }
+            let hint = tail_log_lines(&log_path, 8);
+            anyhow::bail!(
+                "background process exited immediately (pid {pid}, {status}).\n\
+                 Check log: {}\n{hint}",
+                log_path.display()
+            );
+        }
+        Ok(None) => {
+            // Still running — detach and keep going.
+            std::mem::forget(child);
+        }
+        Err(e) => {
+            let _ = child.kill();
+            anyhow::bail!("failed to check background process status: {e}");
+        }
+    }
+
+    config::write_daemon_pid(pid)?;
+
+    let settings = {
+        // best-effort bind for user message (may already be overridden in child)
+        let db_path = config::config_db_path();
+        ConfigDb::open(&db_path)
+            .ok()
+            .and_then(|db| db.get_settings().ok())
+            .map(|s| s.web_bind)
+            .unwrap_or_else(|| "127.0.0.1:8787".into())
+    };
+    let bind_display = bind.unwrap_or(settings);
+
+    println!("Started in background (pid {pid})");
+    println!("Web UI  → http://{bind_display}");
+    if no_log {
+        println!("Log     → disabled (--no-log)");
+    } else {
+        println!("Log     → {}", log_path.display());
+    }
+    println!("PID     → {}", config::pid_file_path().display());
+    println!("Stop with: content-sync quit");
+    Ok(())
+}
+
+fn tail_log_lines(path: &std::path::Path, n: usize) -> String {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return String::new();
+    };
+    let lines: Vec<&str> = content.lines().rev().take(n).collect();
+    if lines.is_empty() {
+        return String::new();
+    }
+    let mut out = String::from("--- last log lines ---\n");
+    for line in lines.into_iter().rev() {
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+fn quit_background() -> anyhow::Result<()> {
+    let Some(pid) = config::read_daemon_pid() else {
+        println!("No background process (pid file not found).");
+        return Ok(());
+    };
+
+    if !config::process_alive(pid) {
+        config::remove_daemon_pid();
+        println!("Background process not running (cleared stale pid {pid}).");
+        return Ok(());
+    }
+
+    config::terminate_process(pid)?;
+
+    // Wait briefly for graceful exit, then SIGKILL if needed
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while config::process_alive(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+
+    if config::process_alive(pid) {
+        #[cfg(unix)]
+        {
+            let rc = unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+            if rc != 0 {
+                let err = std::io::Error::last_os_error();
+                if err.raw_os_error() != Some(libc::ESRCH) {
+                    anyhow::bail!("process {pid} did not exit; SIGKILL failed: {err}");
+                }
+            }
+            // brief wait after kill
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+        #[cfg(not(unix))]
+        {
+            anyhow::bail!("process {pid} did not exit after SIGTERM");
+        }
+    }
+
+    config::remove_daemon_pid();
+    if config::process_alive(pid) {
+        anyhow::bail!("failed to stop background process (pid {pid})");
+    }
+    println!("Stopped background process (pid {pid}).");
+    Ok(())
 }

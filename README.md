@@ -1,17 +1,19 @@
 # Content Sync
 
-CLI Rust đồng bộ **file raw** (mọi định dạng) với một hoặc nhiều database (Bunny / SQL / MongoDB), kèm **Web UI**.
+**English** · [Tiếng Việt](./README.VI.md)
 
-## Tính năng
+Rust CLI to bidirectionally sync **raw files** (any format) with one or more databases (Bunny / SQL / MongoDB), with a built-in **Web UI**.
 
-- **Multi-connection** — mỗi connection = 1 DB + 1 bảng/collection + 1 thư mục local (`watch_dir`)
+## Features
+
+- **Multi-connection** — each connection = one DB + one table/collection + one local directory (`watch_dir`)
 - **Multi-driver** — `sql_api`, `libsql`, `sqlite`, `postgres`, `mysql`, `mariadb`, `mongodb`
-- **Multi-file** — mỗi dir chứa nhiều file raw (mọi định dạng)
-- **Pull/push** — theo từng connection độc lập (nhiều DB / nhiều bảng / nhiều dir cùng lúc)
-- **Web UI** — files (chọn connection), connections, auth tokens, settings
-- **Config local** — `~/.content-sync/config.sqlite`
+- **Multi-file** — each watch dir can hold many raw files (any format)
+- **Pull/push** — independent per connection (many DBs / tables / dirs at once)
+- **Web UI** — files (pick a connection), connections, auth tokens, settings
+- **Local config** — `~/.content-sync/config.sqlite`
 
-## Cài đặt
+## Install
 
 ```bash
 cargo build --release
@@ -22,7 +24,7 @@ cargo build --release
 
 ```bash
 content-sync init
-# hoặc
+# or
 content-sync init --watch-dir ~/my-files
 
 # Bunny SQL API
@@ -51,7 +53,7 @@ content-sync connection add \
   --table content_syncs \
   --watch-dir ~/sync/sqlite
 
-# PostgreSQL (password có thể nằm trong DSN hoặc --access-token)
+# PostgreSQL (password may be in the DSN or --access-token)
 content-sync connection add \
   --name pg \
   --driver postgres \
@@ -69,7 +71,7 @@ content-sync connection add \
   --table content_syncs \
   --watch-dir ~/sync/mysql
 
-# MongoDB (table = collection; DB name lấy từ path URL, mặc định content_sync)
+# MongoDB (table = collection; DB name from URL path, default content_sync)
 content-sync connection add \
   --name mongo \
   --driver mongodb \
@@ -84,46 +86,46 @@ content-sync serve
 
 ## CLI
 
-| Lệnh | Mô tả |
-|------|--------|
-| `content-sync init` | Tạo `~/.content-sync`, settings, auth token admin |
+| Command | Description |
+|---------|-------------|
+| `content-sync init` | Create `~/.content-sync`, settings, admin auth token |
 | `content-sync serve` | Web UI + file watcher + poll sync |
-| `content-sync serve --bind 0.0.0.0:8787` | Bind tùy chỉnh |
-| `content-sync serve --no-sync` | Chỉ Web/API, không watcher |
-| `content-sync sync` | Đồng bộ 1 lần rồi thoát |
-| `content-sync status` | Xem cấu hình |
-| `content-sync token create --name laptop` | Tạo token login Web UI |
-| `content-sync token show admin` | In raw token |
-| `content-sync token list` / `delete` / `set` | Quản lý auth tokens |
-| `content-sync connection add/list/set/delete/test` | Quản lý DB connections |
+| `content-sync serve --bind 0.0.0.0:8787` | Custom bind address |
+| `content-sync serve --no-sync` | Web/API only, no watcher |
+| `content-sync sync` | One-shot sync, then exit |
+| `content-sync status` | Show configuration |
+| `content-sync token create --name laptop` | Create Web UI login token |
+| `content-sync token show admin` | Print raw admin token |
+| `content-sync token list` / `delete` / `set` | Manage auth tokens |
+| `content-sync connection add/list/set/delete/test` | Manage DB connections |
 
 ### Drivers
 
 | Driver | URL / DSN | Secret (`--access-token`) | Remote object |
 |--------|-----------|---------------------------|---------------|
-| `sql_api` (default) | `…/v2/pipeline` — [sql-api.md](./sql-api.md) | Bắt buộc (Bunny token) | SQL table |
-| `libsql` | `https://…` hoặc `libsql://…` — [sdk-rust.md](./sdk-rust.md) | Bắt buộc | SQL table |
-| `sqlite` | path hoặc `sqlite:/path/to.db` | Không cần | SQL table |
-| `postgres` | `postgresql://user@host/db` | Password (nếu chưa có trong DSN) | SQL table |
-| `mysql` | `mysql://user@host/db` | Password (nếu chưa có trong DSN) | SQL table |
-| `mariadb` | `mysql://user@host/db` | Password (nếu chưa có trong DSN) | SQL table |
-| `mongodb` | `mongodb://host/db` hoặc `mongodb+srv://…` | Password (nếu chưa có trong URI) | Collection |
+| `sql_api` (default) | `…/v2/pipeline` — [sql-api.md](./sql-api.md) | Required (Bunny token) | SQL table |
+| `libsql` | `https://…` or `libsql://…` — [sdk-rust.md](./sdk-rust.md) | Required | SQL table |
+| `sqlite` | path or `sqlite:/path/to.db` | Not needed | SQL table |
+| `postgres` | `postgresql://user@host/db` | Password (if not already in DSN) | SQL table |
+| `mysql` | `mysql://user@host/db` | Password (if not already in DSN) | SQL table |
+| `mariadb` | `mysql://user@host/db` | Password (if not already in DSN) | SQL table |
+| `mongodb` | `mongodb://host/db` or `mongodb+srv://…` | Password (if not already in URI) | Collection |
 
-Remote schema (mọi driver SQL / Mongo document): `id`, `file_name` (unique), `content`, `content_hash`, `updated_at`.
+Remote schema (every SQL driver / Mongo document): `id`, `file_name` (unique), `content`, `content_hash`, `updated_at`.
 
 ## Config
 
-| Path | Nội dung |
+| Path | Contents |
 |------|----------|
 | `~/.content-sync/config.sqlite` | Auth tokens, connections, settings, cache, sessions |
-| `~/.content-sync/files/<name>/` | Watch dir mặc định theo connection (mỗi connection một dir) |
+| `~/.content-sync/files/<name>/` | Default watch dir per connection (one dir each) |
 
 ## Web UI
 
-1. **Dashboard** — trạng thái sync, log, Sync now  
-2. **Files** — CRUD file raw text → ghi local + push remote  
-3. **Connections** — CRUD URL/token; driver; Bật/Tắt; Test/migrate  
-4. **Auth Tokens** — token đăng nhập UI  
+1. **Dashboard** — sync status, logs, Sync now  
+2. **Files** — CRUD raw text files → write local + push remote  
+3. **Connections** — CRUD URL/token; driver; enable/disable; Test/migrate  
+4. **Auth Tokens** — UI login tokens  
 5. **Settings** — watch dir, poll, backoff, log retention  
 
 Language: EN (default) / VI toggle (localStorage).

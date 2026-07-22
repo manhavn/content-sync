@@ -66,3 +66,8 @@ futures-util = "0.3.33"
 lto = true
 codegen-units = 1
 strip = true
+
+# cargo-zigbuild / Zig linker prints a harmless "deprecated linker optimization
+# setting '1'" on musl (and similar) targets; rustc surfaces it as linker_messages.
+[lints.rust]
+linker_messages = "allow"

@@ -244,7 +244,7 @@ TO_REGISTRIES=("${NORMALIZED[@]+"${NORMALIZED[@]}"}")
 
 if [[ ${#TO_REGISTRIES[@]} -eq 0 && "$NO_PUSH" -eq 0 ]]; then
   # Default: build local only if no registry requested
-  warn "no --to registry specified; building only (--no-push implied). Use --to dockerhub|ghcr|gar|..."
+  log "no --to registry specified — build only (--no-push). Use --to dockerhub|ghcr|gar|… to push"
   NO_PUSH=1
 fi
 

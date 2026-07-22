@@ -7,6 +7,12 @@ const I18N = {
     access_token: "Access token",
     login: "Sign in",
     login_hint: "Create a token via CLI: <code>content-sync token create --name admin</code>",
+    login_import_config: "Import config",
+    login_import_hint:
+      "First boot (no tokens): import only asks for confirmation. If tokens already exist, enter a valid access token above, then import.",
+    login_import_need_token: "Enter a valid access token above to import config",
+    login_import_ok:
+      "Config imported ({connections} connections, {tokens} auth tokens). Sign in with a token from the imported config.",
     enter_token: "Enter token",
 
     // nav
@@ -175,6 +181,12 @@ const I18N = {
     access_token: "Access token",
     login: "Đăng nhập",
     login_hint: "Tạo token bằng CLI: <code>content-sync token create --name admin</code>",
+    login_import_config: "Import cấu hình",
+    login_import_hint:
+      "Lần đầu (chưa có token): import chỉ cần confirm. Nếu đã có token, nhập access token hợp lệ phía trên rồi import.",
+    login_import_need_token: "Nhập access token hợp lệ phía trên để import cấu hình",
+    login_import_ok:
+      "Đã import cấu hình ({connections} connections, {tokens} auth tokens). Đăng nhập bằng token trong config vừa import.",
     enter_token: "Nhập token",
 
     nav_dashboard: "Dashboard",

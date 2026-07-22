@@ -32,7 +32,12 @@
         <label data-i18n="access_token">Access token</label>
         <input id="login-token" type="password" placeholder="sa_…" autocomplete="off" />
         <button id="btn-login" class="btn primary full" data-i18n="login">Sign in</button>
+        <button type="button" id="btn-login-import-config" class="btn full" data-i18n="login_import_config">Import config</button>
+        <input type="file" id="login-import-config-file" accept="application/json,.json" class="hidden" />
         <p id="login-error" class="error"></p>
+        <p id="login-import-hint" class="hint muted small" data-i18n="login_import_hint">
+          First boot (no tokens): import only asks for confirmation. If tokens already exist, enter a valid access token above, then import.
+        </p>
         <p class="hint" data-i18n="login_hint" data-i18n-html>Create a token via CLI: <code>content-sync token create --name admin</code></p>
       </div>
     </section>

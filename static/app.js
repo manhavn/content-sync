@@ -7,6 +7,8 @@ const state = {
   user: null,
   modalMode: null,
   modalId: null,
+  /** Login bootstrap: whether any auth tokens exist in config DB */
+  hasAuthTokens: true,
 };
 
 /** Client-side list pagination (API returns full arrays) */
@@ -303,10 +305,31 @@ function toast(msg, isErr = false) {
   el._t = setTimeout(() => el.classList.add("hidden"), 3200);
 }
 
+async function loadBootstrap() {
+  try {
+    const b = await fetch("/api/bootstrap", { credentials: "same-origin" }).then(async (res) => {
+      const text = await res.text();
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; } catch { data = null; }
+      if (!res.ok) throw new Error((data && data.error) || res.statusText || "bootstrap failed");
+      return data;
+    });
+    state.hasAuthTokens = !!b.has_auth_tokens;
+  } catch {
+    // Fail closed for import UX (require token if we cannot tell)
+    state.hasAuthTokens = true;
+  }
+  const hint = $("#login-import-hint");
+  if (hint) {
+    hint.classList.toggle("first-boot", !state.hasAuthTokens);
+  }
+}
+
 function showLogin() {
   closeSidebar();
   $("#login-view").classList.remove("hidden");
   $("#main-view").classList.add("hidden");
+  loadBootstrap();
 }
 
 function showMain() {
@@ -393,15 +416,23 @@ async function trySession() {
 
 $("#btn-login").onclick = async () => {
   const token = $("#login-token").value.trim();
-  $("#login-error").textContent = "";
-  if (!token) { $("#login-error").textContent = t("enter_token"); return; }
+  const errEl = $("#login-error");
+  if (errEl) {
+    errEl.textContent = "";
+    errEl.classList.add("error");
+    errEl.classList.remove("ok-msg");
+  }
+  if (!token) {
+    if (errEl) errEl.textContent = t("enter_token");
+    return;
+  }
   try {
     const data = await api("/api/login", { method: "POST", body: JSON.stringify({ token }) });
     state.sessionId = data.session_id;
     localStorage.setItem("sa_session", data.session_id);
     await trySession();
   } catch (e) {
-    $("#login-error").textContent = e.message;
+    if (errEl) errEl.textContent = e.message;
   }
 };
 
@@ -881,6 +912,52 @@ function downloadJsonBlob(obj, filename) {
   URL.revokeObjectURL(url);
 }
 
+async function parseConfigFile(file) {
+  const text = await file.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(t("config_import_invalid"));
+  }
+  if (!data || typeof data !== "object" || !data.settings) {
+    throw new Error(t("config_import_invalid"));
+  }
+  return data;
+}
+
+function formatImportOk(template, res, data) {
+  return template
+    .replace("{connections}", String(res.connections ?? data.connections?.length ?? 0))
+    .replace("{tokens}", String(res.auth_tokens ?? data.auth_tokens?.length ?? 0));
+}
+
+/** POST /api/config/import. Optional raw access token for login-screen import. */
+async function postConfigImport(data, accessToken) {
+  const headers = { "Content-Type": "application/json" };
+  if (accessToken) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  } else if (state.sessionId) {
+    headers["Authorization"] = `Bearer ${state.sessionId}`;
+  }
+  const res = await fetch("/api/config/import", {
+    method: "POST",
+    headers,
+    credentials: "same-origin",
+    body: JSON.stringify(data),
+  });
+  const text = await res.text();
+  let body = null;
+  try { body = text ? JSON.parse(text) : null; } catch { body = { raw: text }; }
+  if (!res.ok) {
+    const err = new Error((body && body.error) || res.statusText || "request failed");
+    err.status = res.status;
+    err.data = body;
+    throw err;
+  }
+  return body;
+}
+
 $("#btn-export-config").onclick = async () => {
   const msg = $("#config-io-msg");
   try {
@@ -908,24 +985,10 @@ $("#import-config-file").onchange = async (ev) => {
   if (!file) return;
   const msg = $("#config-io-msg");
   try {
-    const text = await file.text();
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      throw new Error(t("config_import_invalid"));
-    }
-    if (!data || typeof data !== "object" || !data.settings) {
-      throw new Error(t("config_import_invalid"));
-    }
+    const data = await parseConfigFile(file);
     if (!confirm(t("config_import_confirm"))) return;
-    const res = await api("/api/config/import", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-    const okMsg = t("config_import_ok")
-      .replace("{connections}", String(res.connections ?? data.connections?.length ?? 0))
-      .replace("{tokens}", String(res.auth_tokens ?? data.auth_tokens?.length ?? 0));
+    const res = await postConfigImport(data);
+    const okMsg = formatImportOk(t("config_import_ok"), res, data);
     if (msg) msg.textContent = okMsg;
     toast(okMsg);
     try {
@@ -942,6 +1005,58 @@ $("#import-config-file").onchange = async (ev) => {
     }
   } catch (e) {
     if (msg) msg.textContent = e.message;
+    toast(e.message, true);
+  } finally {
+    ev.target.value = "";
+  }
+};
+
+// Login-screen import: confirm always; token required only when auth tokens already exist
+$("#btn-login-import-config").onclick = () => {
+  const input = $("#login-import-config-file");
+  if (input) {
+    input.value = "";
+    input.click();
+  }
+};
+
+$("#login-import-config-file").onchange = async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const errEl = $("#login-error");
+  if (errEl) errEl.textContent = "";
+  try {
+    // Refresh bootstrap so we know current token state
+    await loadBootstrap();
+    const data = await parseConfigFile(file);
+    if (!confirm(t("config_import_confirm"))) return;
+
+    let accessToken = "";
+    if (state.hasAuthTokens) {
+      accessToken = ($("#login-token")?.value || "").trim();
+      if (!accessToken) {
+        throw new Error(t("login_import_need_token"));
+      }
+    }
+
+    const res = await postConfigImport(data, accessToken || undefined);
+    const okMsg = formatImportOk(t("login_import_ok"), res, data);
+    if (errEl) {
+      errEl.textContent = okMsg;
+      errEl.classList.remove("error");
+      errEl.classList.add("ok-msg");
+    }
+    toast(okMsg);
+    // Sessions were cleared by import — stay on login
+    state.sessionId = "";
+    localStorage.removeItem("sa_session");
+    await loadBootstrap();
+  } catch (e) {
+    if (errEl) {
+      errEl.textContent = e.message;
+      errEl.classList.add("error");
+      errEl.classList.remove("ok-msg");
+    }
     toast(e.message, true);
   } finally {
     ev.target.value = "";

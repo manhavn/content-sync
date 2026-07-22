@@ -18,6 +18,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/login", post(login))
         .route("/api/logout", post(logout))
         .route("/api/me", get(me))
+        // Public bootstrap (login screen): whether any auth tokens exist
+        .route("/api/bootstrap", get(bootstrap))
         // Status / sync
         .route("/api/status", get(status))
         .route("/api/sync", post(trigger_sync))
@@ -25,6 +27,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         // Settings
         .route("/api/settings", get(get_settings).put(put_settings))
         // Config export / import (settings + connections + auth tokens; no sync logs)
+        // Import: unauthenticated only when no auth tokens yet; otherwise session/token required.
         .route("/api/config/export", get(export_config))
         .route("/api/config/import", post(import_config))
         // Connections
@@ -111,7 +114,30 @@ async fn require_auth(state: &AppState, headers: &HeaderMap) -> Result<AuthToken
     Err(ApiError::unauthorized("invalid credentials"))
 }
 
+/// Auth for config import from Web UI:
+/// - No auth tokens in DB (first boot) → allow without credentials
+/// - Otherwise → require valid session or raw access token (Bearer / cookie)
+async fn require_import_auth(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
+    let tokens = state.db.list_auth_tokens().map_err(ApiError::internal)?;
+    if tokens.is_empty() {
+        return Ok(());
+    }
+    require_auth(state, headers).await?;
+    Ok(())
+}
+
 // ── Handlers ──────────────────────────────────────────────────
+
+/// Public: login-screen needs to know if a token is required for import.
+async fn bootstrap(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let tokens = state.db.list_auth_tokens().map_err(ApiError::internal)?;
+    Ok(Json(serde_json::json!({
+        "has_auth_tokens": !tokens.is_empty(),
+        "auth_token_count": tokens.len(),
+    })))
+}
 
 async fn index() -> Response {
     crate::web::serve_asset("index.html")
@@ -316,7 +342,7 @@ async fn import_config(
     headers: HeaderMap,
     Json(body): Json<ConfigExport>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    require_auth(&state, &headers).await?;
+    require_import_auth(&state, &headers).await?;
     state
         .db
         .import_config(&body)

@@ -128,6 +128,8 @@ code { font-family: var(--mono); font-size: 0.9em; background: var(--bg3); paddi
   min-height: 100vh; display: grid; place-items: center; padding: 24px;
 }
 .login-card { width: min(420px, 100%); display: flex; flex-direction: column; gap: 10px; }
+.login-card .ok-msg { color: var(--ok, #3dd68c); font-size: 0.9rem; margin: 0; }
+.login-card #login-import-hint.first-boot { opacity: 0.95; }
 
 /* Cards / forms */
 .card {

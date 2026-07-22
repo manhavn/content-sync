@@ -1,3 +1,4 @@
+use crate::config;
 use crate::models::*;
 use crate::remote;
 use crate::sync::{self, AppState};
@@ -26,6 +27,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/sync/log", get(sync_log))
         // Settings
         .route("/api/settings", get(get_settings).put(put_settings))
+        // Graceful self-restart (applies web_bind, reloads process)
+        .route("/api/system/restart", post(restart_app))
         // Config export / import (settings + connections + auth tokens; no sync logs)
         // Import: unauthenticated only when no auth tokens yet; otherwise session/token required.
         .route("/api/config/export", get(export_config))
@@ -310,6 +313,59 @@ async fn put_settings(
     state.db.save_settings(&s).map_err(ApiError::internal)?;
     state.request_reload();
     Ok(Json(s))
+}
+
+/// Spawn a replacement `serve` process (waits for this PID to exit), then shut down.
+/// Applies process-level settings such as `web_bind` without manual CLI restart.
+async fn restart_app(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_auth(&state, &headers).await?;
+
+    if state.shutdown_tx.read().is_none() {
+        return Err(ApiError::bad_request(
+            "restart is only available while the Web UI server (serve/background) is running",
+        ));
+    }
+
+    let no_sync = state
+        .serve_no_sync
+        .load(std::sync::atomic::Ordering::SeqCst);
+    let no_log = state.serve_no_log.load(std::sync::atomic::Ordering::SeqCst);
+    let web_bind = state
+        .db
+        .get_settings()
+        .map_err(ApiError::internal)?
+        .web_bind;
+
+    let wait_pid = std::process::id();
+    crate::cli::spawn_restart_process(wait_pid, no_sync, no_log).map_err(ApiError::internal)?;
+
+    let _ = state.db.log_sync(
+        "info",
+        &format!("Web UI requested process restart (will re-bind {web_bind})"),
+    );
+
+    // Delay shutdown slightly so this HTTP response can flush.
+    let st = Arc::clone(&state);
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+        if !st.request_shutdown() {
+            // Fallback: signal self on Unix
+            #[cfg(unix)]
+            {
+                let _ = config::terminate_process(std::process::id());
+            }
+        }
+    });
+
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "web_bind": web_bind,
+        "reconnect_in_ms": 2000,
+        "message": "Restarting… the page will reconnect automatically."
+    })))
 }
 
 // ── Config export / import ────────────────────────────────────

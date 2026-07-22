@@ -4,7 +4,7 @@ use crate::remote;
 use crate::sync::{self, AppState};
 use clap::{Parser, Subcommand};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -861,13 +861,24 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             no_sync,
             no_log,
         } => {
+            // Self-restart path: wait for previous process to exit so the port is free.
+            let from_restart = wait_for_restart_parent();
+
             let mut settings = db.get_settings()?;
             if let Some(b) = bind {
                 settings.web_bind = b;
                 db.save_settings(&settings)?;
             }
             let state = AppState::new(db);
+            state
+                .serve_no_sync
+                .store(no_sync, std::sync::atomic::Ordering::SeqCst);
+            state
+                .serve_no_log
+                .store(no_log, std::sync::atomic::Ordering::SeqCst);
+
             let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+            *state.shutdown_tx.write() = Some(shutdown_tx.clone());
 
             let sync_handle = if !no_sync {
                 let st = Arc::clone(&state);
@@ -881,17 +892,44 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let app = crate::web::router(Arc::clone(&state));
             let listener = tokio::net::TcpListener::bind(&settings.web_bind).await?;
             let addr = listener.local_addr()?;
+
+            // After a Web UI restart (or if we already own the daemon pid), keep pid file updated.
+            if from_restart {
+                if let Err(e) = config::write_daemon_pid(std::process::id()) {
+                    warn!("could not write daemon pid after restart: {e}");
+                }
+            }
+
             if !no_log {
                 info!("Web UI listening on http://{addr}");
                 println!("Content Sync Web UI → http://{addr}");
                 println!("Config            → {}", config::config_dir().display());
-                println!("Press Ctrl+C to stop.");
+                if from_restart {
+                    println!("(restarted; stop with: content-sync quit)");
+                } else {
+                    println!("Press Ctrl+C to stop.");
+                }
             }
 
+            let mut signal_rx = shutdown_tx.subscribe();
             let serve = axum::serve(listener, app).with_graceful_shutdown(async move {
-                wait_shutdown_signal().await;
-                info!("shutdown signal");
-                let _ = shutdown_tx.send(true);
+                tokio::select! {
+                    _ = wait_shutdown_signal() => {
+                        info!("shutdown signal");
+                        let _ = shutdown_tx.send(true);
+                    }
+                    _ = async {
+                        loop {
+                            if signal_rx.changed().await.is_err() {
+                                break;
+                            }
+                            if *signal_rx.borrow() {
+                                info!("shutdown requested (API restart or internal)");
+                                break;
+                            }
+                        }
+                    } => {}
+                }
             });
 
             serve.await?;
@@ -914,6 +952,97 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         } => start_background(bind, no_sync, no_log),
 
         Commands::Quit => quit_background(),
+    }
+}
+
+/// Env set by Web UI self-restart: new process waits for this PID to exit before binding.
+const RESTART_WAIT_PID_ENV: &str = "CONTENT_SYNC_WAIT_PID";
+
+/// If spawned for self-restart, block until the previous process exits (port free).
+/// Returns true when this process was started via restart.
+fn wait_for_restart_parent() -> bool {
+    let Ok(s) = std::env::var(RESTART_WAIT_PID_ENV) else {
+        return false;
+    };
+    let Ok(pid) = s.parse::<u32>() else {
+        return false;
+    };
+    // Avoid waiting on ourselves (misconfiguration)
+    if pid == 0 || pid == std::process::id() {
+        let _ = std::env::remove_var(RESTART_WAIT_PID_ENV);
+        return false;
+    }
+    info!("restart: waiting for previous process pid {pid} to exit…");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while config::process_alive(pid) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    // Brief settle for OS to release the listen port
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    let _ = std::env::remove_var(RESTART_WAIT_PID_ENV);
+    true
+}
+
+/// Spawn a detached `serve` that waits for `wait_pid` to exit, then binds with saved settings.
+/// Used by `POST /api/system/restart` so web_bind and other process-level settings apply.
+pub fn spawn_restart_process(wait_pid: u32, no_sync: bool, no_log: bool) -> anyhow::Result<()> {
+    #[cfg(not(unix))]
+    {
+        let _ = (wait_pid, no_sync, no_log);
+        anyhow::bail!("process restart from Web UI is only supported on Unix");
+    }
+    #[cfg(unix)]
+    {
+        let exe = std::env::current_exe()
+            .map_err(|e| anyhow::anyhow!("cannot resolve current executable: {e}"))?;
+        config::ensure_config_dir()?;
+        let log_path = config::background_log_path();
+
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.arg("serve");
+        if no_sync {
+            cmd.arg("--no-sync");
+        }
+        if no_log {
+            cmd.arg("--no-log");
+        }
+        cmd.env(RESTART_WAIT_PID_ENV, wait_pid.to_string());
+        cmd.stdin(std::process::Stdio::null());
+
+        if no_log {
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        } else {
+            let log_file = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+                .map_err(|e| anyhow::anyhow!("cannot open log {}: {e}", log_path.display()))?;
+            let log_err = log_file
+                .try_clone()
+                .map_err(|e| anyhow::anyhow!("cannot clone log handle: {e}"))?;
+            cmd.stdout(std::process::Stdio::from(log_file))
+                .stderr(std::process::Stdio::from(log_err));
+        }
+
+        {
+            use std::os::unix::process::CommandExt;
+            unsafe {
+                cmd.pre_exec(|| {
+                    if libc::setsid() == -1 {
+                        return Err(std::io::Error::last_os_error());
+                    }
+                    Ok(())
+                });
+            }
+        }
+
+        let child = cmd
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("failed to spawn restart process: {e}"))?;
+        // Detach — child waits for us, then becomes the new server.
+        std::mem::forget(child);
+        Ok(())
     }
 }
 

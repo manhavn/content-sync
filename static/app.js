@@ -892,6 +892,86 @@ $("#btn-save-settings").onclick = async () => {
   } catch (e) { toast(e.message, true); }
 };
 
+/** Build browser URL for a saved web_bind (host/port). Wildcard binds keep current hostname. */
+function urlFromWebBind(bind) {
+  const raw = String(bind || "").trim();
+  if (!raw) return window.location.origin + "/";
+  let host = raw;
+  let port = "";
+  if (raw.startsWith("[")) {
+    const m = raw.match(/^\[([^\]]+)\]:(\d+)$/);
+    if (m) {
+      host = m[1];
+      port = m[2];
+    }
+  } else {
+    const idx = raw.lastIndexOf(":");
+    if (idx > 0) {
+      host = raw.slice(0, idx);
+      port = raw.slice(idx + 1);
+    }
+  }
+  if (!port || !/^\d+$/.test(port)) {
+    return window.location.origin + "/";
+  }
+  const wild =
+    host === "0.0.0.0" ||
+    host === "::" ||
+    host === "[::]" ||
+    host === "*" ||
+    host === "";
+  const h = wild ? window.location.hostname : host;
+  const proto = window.location.protocol || "http:";
+  const needBrackets = h.includes(":") && !h.startsWith("[");
+  const hostPart = needBrackets ? `[${h}]` : h;
+  return `${proto}//${hostPart}:${port}/`;
+}
+
+async function waitForServer(url, timeoutMs = 20000) {
+  const base = url.replace(/\/$/, "");
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${base}/api/bootstrap`, {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      if (res.ok || res.status === 401 || res.status === 404) return true;
+    } catch {
+      // still down
+    }
+    await new Promise((r) => setTimeout(r, 400));
+  }
+  return false;
+}
+
+$("#btn-restart-app").onclick = async () => {
+  if (!confirm(t("restart_confirm"))) return;
+  const msg = $("#settings-msg");
+  const btn = $("#btn-restart-app");
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api("/api/system/restart", { method: "POST" });
+    const target = urlFromWebBind(r.web_bind || $("#set-bind")?.value);
+    const waitMs = Number(r.reconnect_in_ms) || 2000;
+    if (msg) msg.textContent = t("restart_started");
+    toast(t("restart_started"));
+    // Give the old process time to exit, then poll until the new one answers.
+    await new Promise((r) => setTimeout(r, waitMs));
+    const up = await waitForServer(target, 25000);
+    if (up) {
+      window.location.href = target;
+    } else {
+      // Still try navigate — user may refresh manually if bind changed
+      window.location.href = target;
+    }
+  } catch (e) {
+    if (msg) msg.textContent = e.message || t("restart_failed");
+    toast(e.message || t("restart_failed"), true);
+    if (btn) btn.disabled = false;
+  }
+};
+
 /** Filename: export.content.sync.YYYY-MM-DD.HH-MM-SS.json (no spaces; specials → -) */
 function configExportFilename(d = new Date()) {
   const pad = (n) => String(n).padStart(2, "0");

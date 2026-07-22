@@ -247,9 +247,12 @@
               <input id="set-error-backoff-max" type="number" min="60" />
               <label data-i18n="label_log_retention">Log retention (hours)</label>
               <input id="set-log-retention" type="number" min="0" placeholder="48" />
-              <label data-i18n="label_web_bind">Web bind (restart CLI to apply)</label>
+              <label data-i18n="label_web_bind">Web bind (needs app restart to apply)</label>
               <input id="set-bind" type="text" />
-              <button id="btn-save-settings" class="btn primary" data-i18n="save_settings">Save settings</button>
+              <div class="btn-row">
+                <button id="btn-save-settings" class="btn primary" data-i18n="save_settings">Save settings</button>
+                <button type="button" id="btn-restart-app" class="btn" data-i18n="restart_app">Restart app</button>
+              </div>
               <p id="settings-msg" class="muted"></p>
             </div>
             <div class="card form-card">

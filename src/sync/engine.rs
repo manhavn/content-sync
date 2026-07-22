@@ -39,6 +39,11 @@ pub struct AppState {
     backoff: RwLock<HashMap<String, ConnBackoff>>,
     /// connection_ids that already ran ensure_schema this process
     schema_ready: RwLock<HashSet<String>>,
+    /// Serve flags preserved across Web UI self-restart
+    pub serve_no_sync: AtomicBool,
+    pub serve_no_log: AtomicBool,
+    /// Graceful shutdown for `serve` (API restart + signals)
+    pub shutdown_tx: RwLock<Option<tokio::sync::watch::Sender<bool>>>,
 }
 
 impl AppState {
@@ -54,11 +59,24 @@ impl AppState {
             reload_flag: AtomicBool::new(false),
             backoff: RwLock::new(HashMap::new()),
             schema_ready: RwLock::new(HashSet::new()),
+            serve_no_sync: AtomicBool::new(false),
+            serve_no_log: AtomicBool::new(false),
+            shutdown_tx: RwLock::new(None),
         })
     }
 
     pub fn request_reload(&self) {
         self.reload_flag.store(true, Ordering::SeqCst);
+    }
+
+    /// Ask the serve loop to shut down gracefully (used by Web UI restart).
+    pub fn request_shutdown(&self) -> bool {
+        if let Some(tx) = self.shutdown_tx.read().as_ref() {
+            let _ = tx.send(true);
+            true
+        } else {
+            false
+        }
     }
 
     /// Drop in-memory state for a deleted connection (backoff, schema flag, remote hashes).

@@ -134,9 +134,14 @@ const I18N = {
     label_backoff: "Error backoff base (seconds) — wait longer after remote failures (rate limit)",
     label_backoff_max: "Error backoff max (seconds) — exponential backoff cap",
     label_log_retention: "Log retention (hours) — auto-delete older sync logs (default 48; 0 = disable age cleanup)",
-    label_web_bind: "Web bind (restart CLI to apply)",
+    label_web_bind: "Web bind (needs app restart to apply)",
     save_settings: "Save settings",
-    settings_saved_msg: "Saved. Watcher will reload; web_bind needs a CLI restart.",
+    restart_app: "Restart app",
+    restart_confirm:
+      "Restart Content Sync now? The Web UI will disconnect briefly and reconnect. Unsaved form edits elsewhere will be lost.",
+    restart_started: "Restarting… waiting for the server to come back",
+    restart_failed: "Restart failed",
+    settings_saved_msg: "Saved. Watcher reloads now; use Restart app if you changed web_bind.",
     settings_saved: "Settings saved",
     config_io_title: "Export / Import config",
     config_io_hint:
@@ -302,9 +307,14 @@ const I18N = {
     label_backoff: "Error backoff base (giây) — chờ lâu hơn khi remote fail (tránh rate limit)",
     label_backoff_max: "Error backoff max (giây) — trần exponential backoff",
     label_log_retention: "Log retention (giờ) — tự xoá sync log cũ hơn (mặc định 48; 0 = tắt age cleanup)",
-    label_web_bind: "Web bind (cần restart CLI để áp dụng)",
+    label_web_bind: "Web bind (cần restart app để áp dụng)",
     save_settings: "Lưu settings",
-    settings_saved_msg: "Đã lưu. Watcher sẽ reload; web_bind cần restart CLI.",
+    restart_app: "Restart app",
+    restart_confirm:
+      "Khởi động lại Content Sync ngay? Web UI sẽ ngắt kết nối giây lát rồi tự kết nối lại. Thay đổi form chưa lưu ở chỗ khác sẽ mất.",
+    restart_started: "Đang restart… chờ server lên lại",
+    restart_failed: "Restart thất bại",
+    settings_saved_msg: "Đã lưu. Watcher reload ngay; dùng Restart app nếu đã đổi web_bind.",
     settings_saved: "Đã lưu settings",
     config_io_title: "Export / Import cấu hình",
     config_io_hint:

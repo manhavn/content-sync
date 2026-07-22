@@ -20,38 +20,251 @@ cargo build --release
 # binary: ./target/release/content-sync
 ```
 
-### Multi-platform release builds
+Host-only release helper (fmt + check + build):
 
 ```bash
-# fmt → build for linux (gnu/musl × amd64/aarch64), windows, macOS (if tooling allows)
-./scripts/build-release-multi.sh
-
-# list which builder each target would use
-./scripts/build-release-multi.sh --list
-
-# subset of targets
-./scripts/build-release-multi.sh --only x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+./scripts/build-release.sh
+# → ./target/release/content-sync
 ```
 
-Artifacts land in `dist/` as `content-sync-v<ver>-<target>[.exe]` (+ `SHA256SUMS.txt`).
+## Multi-platform release builds
 
-**Builder preference (per target):** host `cargo` → `cargo-zigbuild`+zig → `cross`+podman/docker.
+Script: [`scripts/build-release-multi.sh`](./scripts/build-release-multi.sh)
 
-- **Linux musl** builds are static (portable across distros).
-- **macOS** (from Linux): `cargo-zigbuild` + **zig 0.13.x** (0.14+ is flaky) + **MacOSX SDK**:
-  ```bash
-  # zig 0.13 → ~/.local/bin/zig
-  # SDK:
-  mkdir -p ~/.local/macos-sdk
-  curl -fL https://github.com/joseluisq/macosx-sdks/releases/download/11.3/MacOSX11.3.sdk.tar.xz \
-    | tar -xJ -C ~/.local/macos-sdk
-  export SDKROOT=$HOME/.local/macos-sdk/MacOSX11.3.sdk   # auto-detected by the script if present
-  ./scripts/build-release-multi.sh --only aarch64-apple-darwin,x86_64-apple-darwin
-  ```
-- **Windows** via `cross` (gnu) or zigbuild when available.
-- Smoke-tests `--version`/`--help` when the binary can run on this host; otherwise build-only (macOS/Windows on Linux).
+It always runs **`cargo fmt`** first, then builds release artifacts into **`dist/`**:
 
-Host-only release (fmt + check + build): `./scripts/build-release.sh`.
+```text
+dist/content-sync-v<version>-<target>[.exe]
+dist/SHA256SUMS.txt
+```
+
+**Builder preference (per target):** host `cargo` → `cargo-zigbuild` + zig → `cross` + podman/docker.
+
+Verified on a **Linux x86_64** host (see matrix below). Runtime smoke tests (`--version` / `--help`) run only when the binary can execute on the host; macOS / Windows / foreign-arch Linux are build-only.
+
+### 1. Prerequisites (always)
+
+```bash
+# Rust stable + rustup targets as needed
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustup default stable
+rustup component add rustfmt
+
+# Optional but recommended for tools installed under ~/.local
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+```
+
+### 2. Install tools (pick what you need)
+
+#### A. `cross` + Podman/Docker — Linux cross + Windows x86_64
+
+Used successfully for:
+
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-gnu`
+- `aarch64-unknown-linux-musl`
+- `x86_64-pc-windows-gnu`
+
+```bash
+# Install cross
+cargo install cross --git https://github.com/cross-rs/cross
+
+# Container engine (podman preferred on many hosts)
+# Debian/Ubuntu example:
+#   sudo apt-get install -y podman
+# Or install Docker Engine.
+
+export CROSS_CONTAINER_ENGINE=podman   # or docker
+# First build pulls ghcr.io/cross-rs/<target>:main (~1–2 GB per image)
+```
+
+#### B. `cargo-zigbuild` + Zig **0.13.x** — macOS + Windows ARM64
+
+Used successfully for:
+
+- `aarch64-apple-darwin`
+- `x86_64-apple-darwin`
+- `aarch64-pc-windows-gnullvm`
+
+> **Important:** use **Zig 0.13.x**. Zig **0.14+** failed macOS link (SDK/sysroot path issues) in our tests.
+
+```bash
+# cargo-zigbuild
+cargo install cargo-zigbuild
+
+# Zig 0.13.0 (Linux x86_64 host example)
+ZIG_VER=0.13.0
+curl -fL "https://ziglang.org/download/${ZIG_VER}/zig-linux-x86_64-${ZIG_VER}.tar.xz" \
+  -o /tmp/zig.tar.xz
+mkdir -p "$HOME/.local"
+tar -xJf /tmp/zig.tar.xz -C "$HOME/.local"
+# Layout: ~/.local/zig-linux-x86_64-0.13.0/zig  (or rename as you like)
+ln -sfn "$HOME/.local/zig-linux-x86_64-${ZIG_VER}/zig" "$HOME/.local/bin/zig"
+# If you extracted to ~/.local/zig-0.13.0:
+# ln -sfn "$HOME/.local/zig-0.13.0/zig" "$HOME/.local/bin/zig"
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+zig version   # expect 0.13.0
+```
+
+#### C. MacOSX SDK — required for **apple-darwin** from Linux
+
+macOS link needs Apple frameworks (`CoreFoundation`, `Security`, …). Download a prepackaged SDK:
+
+```bash
+mkdir -p "$HOME/.local/macos-sdk"
+curl -fL \
+  "https://github.com/joseluisq/macosx-sdks/releases/download/11.3/MacOSX11.3.sdk.tar.xz" \
+  | tar -xJ -C "$HOME/.local/macos-sdk"
+
+export SDKROOT="$HOME/.local/macos-sdk/MacOSX11.3.sdk"
+# build-release-multi.sh auto-detects this path if SDKROOT is unset
+ls "$SDKROOT/System/Library/Frameworks" | head
+```
+
+### 3. One-shot multi build (recommended)
+
+```bash
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+export CROSS_CONTAINER_ENGINE=podman   # if using cross
+# SDKROOT auto-detected from ~/.local/macos-sdk/MacOSX*.sdk when present
+
+# See which builder each target would use
+./scripts/build-release-multi.sh --list
+
+# Full default matrix (skips targets that lack tooling)
+./scripts/build-release-multi.sh
+
+# Subset
+./scripts/build-release-multi.sh --only x86_64-unknown-linux-musl,aarch64-apple-darwin
+
+# Build only (no smoke tests)
+./scripts/build-release-multi.sh --skip-test
+```
+
+### 4. Manual build per target (verified)
+
+Assume you are in the repo root, PATH includes `~/.local/bin` and `~/.cargo/bin`, and `SDKROOT` is set when building macOS.
+
+#### Linux x86_64 (host / glibc)
+
+```bash
+cargo build --release --target x86_64-unknown-linux-gnu
+# or without --target on an x86_64-unknown-linux-gnu host:
+# cargo build --release
+# → target/x86_64-unknown-linux-gnu/release/content-sync  (or target/release/)
+./target/x86_64-unknown-linux-gnu/release/content-sync --version
+```
+
+#### Linux x86_64 musl (static, portable)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+cross build --release --target x86_64-unknown-linux-musl
+file target/x86_64-unknown-linux-musl/release/content-sync
+# ELF … static-pie linked
+./target/x86_64-unknown-linux-musl/release/content-sync --version
+```
+
+#### Linux aarch64 (gnu)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+rustup target add aarch64-unknown-linux-gnu
+cross build --release --target aarch64-unknown-linux-gnu
+# Cannot run on x86_64 host without qemu-aarch64
+file target/aarch64-unknown-linux-gnu/release/content-sync
+# ELF 64-bit … ARM aarch64 … dynamically linked
+```
+
+#### Linux aarch64 musl (static)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+rustup target add aarch64-unknown-linux-musl
+cross build --release --target aarch64-unknown-linux-musl
+file target/aarch64-unknown-linux-musl/release/content-sync
+# ELF 64-bit … ARM aarch64 … statically linked
+```
+
+#### Windows x86_64 (gnu)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+rustup target add x86_64-pc-windows-gnu
+cross build --release --target x86_64-pc-windows-gnu
+file target/x86_64-pc-windows-gnu/release/content-sync.exe
+# PE32+ executable … x86-64
+```
+
+#### Windows ARM64 (gnullvm) via zigbuild
+
+```bash
+# requires cargo-zigbuild + zig 0.13.x
+rustup target add aarch64-pc-windows-gnullvm
+cargo zigbuild --release --target aarch64-pc-windows-gnullvm
+file target/aarch64-pc-windows-gnullvm/release/content-sync.exe
+# PE32+ executable … ARM64
+```
+
+#### macOS Apple Silicon (aarch64) via zigbuild + SDK
+
+```bash
+export SDKROOT="$HOME/.local/macos-sdk/MacOSX11.3.sdk"
+rustup target add aarch64-apple-darwin
+cargo zigbuild --release --target aarch64-apple-darwin
+file target/aarch64-apple-darwin/release/content-sync
+# Mach-O 64-bit arm64 executable
+```
+
+#### macOS Intel (x86_64) via zigbuild + SDK
+
+```bash
+export SDKROOT="$HOME/.local/macos-sdk/MacOSX11.3.sdk"
+rustup target add x86_64-apple-darwin
+cargo zigbuild --release --target x86_64-apple-darwin
+file target/x86_64-apple-darwin/release/content-sync
+# Mach-O 64-bit x86_64 executable
+```
+
+### 5. Verified matrix (Linux x86_64 CI-style host)
+
+| Target | Builder | Notes |
+|--------|---------|--------|
+| `x86_64-unknown-linux-gnu` | `cargo` | Smoke-tested on host |
+| `x86_64-unknown-linux-musl` | `cross` (+ podman) | **Static-pie** — portable across distros; smoke-tested |
+| `aarch64-unknown-linux-gnu` | `cross` (+ podman) | Dynamic aarch64; build-only on x86_64 |
+| `aarch64-unknown-linux-musl` | `cross` (+ podman) | **Static** aarch64; build-only on x86_64 |
+| `x86_64-pc-windows-gnu` | `cross` (+ podman) | `.exe` x86-64; build-only |
+| `aarch64-pc-windows-gnullvm` | `cargo-zigbuild` + zig 0.13 | `.exe` ARM64; build-only |
+| `aarch64-apple-darwin` | `cargo-zigbuild` + zig 0.13 + MacOSX11.3 SDK | Mach-O arm64; build-only |
+| `x86_64-apple-darwin` | `cargo-zigbuild` + zig 0.13 + MacOSX11.3 SDK | Mach-O x86_64; build-only |
+
+Example artifact names after the multi script:
+
+```text
+dist/content-sync-v0.1.0-x86_64-unknown-linux-gnu
+dist/content-sync-v0.1.0-x86_64-unknown-linux-musl
+dist/content-sync-v0.1.0-aarch64-unknown-linux-gnu
+dist/content-sync-v0.1.0-aarch64-unknown-linux-musl
+dist/content-sync-v0.1.0-x86_64-pc-windows-gnu.exe
+dist/content-sync-v0.1.0-aarch64-pc-windows-gnullvm.exe
+dist/content-sync-v0.1.0-aarch64-apple-darwin
+dist/content-sync-v0.1.0-x86_64-apple-darwin
+dist/SHA256SUMS.txt
+```
+
+### 6. Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| macOS link: `unable to find framework 'CoreFoundation'` | Install MacOSX SDK and set `SDKROOT` (section 2.C) |
+| macOS link broken with Zig 0.14 | Downgrade / switch symlink to **Zig 0.13.x** |
+| `cross` falls back to host cargo | Install podman/docker and set `CROSS_CONTAINER_ENGINE` |
+| First `cross` build is slow | Normal — pulls `ghcr.io/cross-rs/<target>:main` |
+| Smoke test skipped | Expected for non-native arch / macOS / Windows on Linux |
+| `zig: command not found` | Ensure `~/.local/bin` is on `PATH` and symlink points to Zig 0.13 |
 
 ## Quick start
 

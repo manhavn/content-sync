@@ -20,36 +20,251 @@ cargo build --release
 # binary: ./target/release/content-sync
 ```
 
-### Build release đa nền tảng
+Release host-only (fmt + check + build):
 
 ```bash
-# fmt → build linux (gnu/musl × amd64/aarch64), windows, macOS (nếu có tool)
-./scripts/build-release-multi.sh
-
-# xem builder cho từng target
-./scripts/build-release-multi.sh --list
-
-# chỉ một số target
-./scripts/build-release-multi.sh --only x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+./scripts/build-release.sh
+# → ./target/release/content-sync
 ```
 
-Artifact trong `dist/`: `content-sync-v<ver>-<target>[.exe]` (+ `SHA256SUMS.txt`).
+## Build release đa nền tảng
 
-**Ưu tiên builder:** host `cargo` → `cargo-zigbuild`+zig → `cross`+podman/docker.
+Script: [`scripts/build-release-multi.sh`](./scripts/build-release-multi.sh)
 
-- **Linux musl** = static (không phụ thuộc distro).
-- **macOS** (build từ Linux): `cargo-zigbuild` + **zig 0.13.x** (0.14+ hay lỗi) + **MacOSX SDK**:
-  ```bash
-  mkdir -p ~/.local/macos-sdk
-  curl -fL https://github.com/joseluisq/macosx-sdks/releases/download/11.3/MacOSX11.3.sdk.tar.xz \
-    | tar -xJ -C ~/.local/macos-sdk
-  export SDKROOT=$HOME/.local/macos-sdk/MacOSX11.3.sdk
-  ./scripts/build-release-multi.sh --only aarch64-apple-darwin,x86_64-apple-darwin
-  ```
-- **Windows** qua `cross` (gnu) hoặc zigbuild.
-- Smoke-test `--version`/`--help` khi chạy được trên host; macOS/Windows trên Linux chỉ build.
+Luôn chạy **`cargo fmt`** trước, rồi build release vào **`dist/`**:
 
-Release host-only: `./scripts/build-release.sh`.
+```text
+dist/content-sync-v<version>-<target>[.exe]
+dist/SHA256SUMS.txt
+```
+
+**Ưu tiên builder (từng target):** host `cargo` → `cargo-zigbuild` + zig → `cross` + podman/docker.
+
+Đã verify trên host **Linux x86_64** (bảng ma trận bên dưới). Smoke-test runtime (`--version` / `--help`) chỉ chạy khi binary chạy được trên host; macOS / Windows / Linux kiến trúc khác = chỉ build.
+
+### 1. Yêu cầu chung
+
+```bash
+# Rust stable + rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+rustup default stable
+rustup component add rustfmt
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+```
+
+### 2. Cài tool (chọn theo target cần build)
+
+#### A. `cross` + Podman/Docker — Linux cross + Windows x86_64
+
+Đã build thành công:
+
+- `x86_64-unknown-linux-musl`
+- `aarch64-unknown-linux-gnu`
+- `aarch64-unknown-linux-musl`
+- `x86_64-pc-windows-gnu`
+
+```bash
+# Cài cross
+cargo install cross --git https://github.com/cross-rs/cross
+
+# Container engine (podman ưu tiên)
+# Debian/Ubuntu ví dụ:
+#   sudo apt-get install -y podman
+# hoặc Docker Engine
+
+export CROSS_CONTAINER_ENGINE=podman   # hoặc docker
+# Lần build đầu sẽ pull image ghcr.io/cross-rs/<target>:main (~1–2 GB / target)
+```
+
+#### B. `cargo-zigbuild` + Zig **0.13.x** — macOS + Windows ARM64
+
+Đã build thành công:
+
+- `aarch64-apple-darwin`
+- `x86_64-apple-darwin`
+- `aarch64-pc-windows-gnullvm`
+
+> **Quan trọng:** dùng **Zig 0.13.x**. Zig **0.14+** lỗi link macOS (SDK/sysroot) trong test của chúng tôi.
+
+```bash
+# cargo-zigbuild
+cargo install cargo-zigbuild
+
+# Zig 0.13.0 (host Linux x86_64)
+ZIG_VER=0.13.0
+curl -fL "https://ziglang.org/download/${ZIG_VER}/zig-linux-x86_64-${ZIG_VER}.tar.xz" \
+  -o /tmp/zig.tar.xz
+mkdir -p "$HOME/.local"
+tar -xJf /tmp/zig.tar.xz -C "$HOME/.local"
+# Tùy tên thư mục sau khi giải nén, ví dụ:
+#   ~/.local/zig-linux-x86_64-0.13.0/zig
+#   hoặc ~/.local/zig-0.13.0/zig
+ln -sfn "$HOME/.local/zig-linux-x86_64-${ZIG_VER}/zig" "$HOME/.local/bin/zig"
+# Nếu đã đổi tên:
+# ln -sfn "$HOME/.local/zig-0.13.0/zig" "$HOME/.local/bin/zig"
+
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+zig version   # kỳ vọng 0.13.0
+```
+
+#### C. MacOSX SDK — bắt buộc khi build **apple-darwin** từ Linux
+
+Link macOS cần framework Apple (`CoreFoundation`, `Security`, …):
+
+```bash
+mkdir -p "$HOME/.local/macos-sdk"
+curl -fL \
+  "https://github.com/joseluisq/macosx-sdks/releases/download/11.3/MacOSX11.3.sdk.tar.xz" \
+  | tar -xJ -C "$HOME/.local/macos-sdk"
+
+export SDKROOT="$HOME/.local/macos-sdk/MacOSX11.3.sdk"
+# build-release-multi.sh tự tìm path này nếu SDKROOT chưa set
+ls "$SDKROOT/System/Library/Frameworks" | head
+```
+
+### 3. Build multi một lệnh (khuyến nghị)
+
+```bash
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+export CROSS_CONTAINER_ENGINE=podman
+# SDKROOT tự detect từ ~/.local/macos-sdk/MacOSX*.sdk nếu có
+
+# Xem builder cho từng target
+./scripts/build-release-multi.sh --list
+
+# Full matrix mặc định (skip target thiếu tool)
+./scripts/build-release-multi.sh
+
+# Subset
+./scripts/build-release-multi.sh --only x86_64-unknown-linux-musl,aarch64-apple-darwin
+
+# Chỉ build, không smoke-test
+./scripts/build-release-multi.sh --skip-test
+```
+
+### 4. Build thủ công từng target (đã verify)
+
+Giả định: đang ở root repo, PATH có `~/.local/bin` và `~/.cargo/bin`, set `SDKROOT` khi build macOS.
+
+#### Linux x86_64 (host / glibc)
+
+```bash
+cargo build --release --target x86_64-unknown-linux-gnu
+# hoặc trên host x86_64-unknown-linux-gnu:
+# cargo build --release
+./target/x86_64-unknown-linux-gnu/release/content-sync --version
+```
+
+#### Linux x86_64 musl (static, portable)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+cross build --release --target x86_64-unknown-linux-musl
+file target/x86_64-unknown-linux-musl/release/content-sync
+# ELF … static-pie linked
+./target/x86_64-unknown-linux-musl/release/content-sync --version
+```
+
+#### Linux aarch64 (gnu)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+rustup target add aarch64-unknown-linux-gnu
+cross build --release --target aarch64-unknown-linux-gnu
+file target/aarch64-unknown-linux-gnu/release/content-sync
+# ELF 64-bit … ARM aarch64 … dynamically linked
+# Không chạy được trên host x86_64 nếu không có qemu-aarch64
+```
+
+#### Linux aarch64 musl (static)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+rustup target add aarch64-unknown-linux-musl
+cross build --release --target aarch64-unknown-linux-musl
+file target/aarch64-unknown-linux-musl/release/content-sync
+# ELF 64-bit … ARM aarch64 … statically linked
+```
+
+#### Windows x86_64 (gnu)
+
+```bash
+export CROSS_CONTAINER_ENGINE=podman
+rustup target add x86_64-pc-windows-gnu
+cross build --release --target x86_64-pc-windows-gnu
+file target/x86_64-pc-windows-gnu/release/content-sync.exe
+# PE32+ executable … x86-64
+```
+
+#### Windows ARM64 (gnullvm) qua zigbuild
+
+```bash
+# cần cargo-zigbuild + zig 0.13.x
+rustup target add aarch64-pc-windows-gnullvm
+cargo zigbuild --release --target aarch64-pc-windows-gnullvm
+file target/aarch64-pc-windows-gnullvm/release/content-sync.exe
+# PE32+ executable … ARM64
+```
+
+#### macOS Apple Silicon (aarch64) — zigbuild + SDK
+
+```bash
+export SDKROOT="$HOME/.local/macos-sdk/MacOSX11.3.sdk"
+rustup target add aarch64-apple-darwin
+cargo zigbuild --release --target aarch64-apple-darwin
+file target/aarch64-apple-darwin/release/content-sync
+# Mach-O 64-bit arm64 executable
+```
+
+#### macOS Intel (x86_64) — zigbuild + SDK
+
+```bash
+export SDKROOT="$HOME/.local/macos-sdk/MacOSX11.3.sdk"
+rustup target add x86_64-apple-darwin
+cargo zigbuild --release --target x86_64-apple-darwin
+file target/x86_64-apple-darwin/release/content-sync
+# Mach-O 64-bit x86_64 executable
+```
+
+### 5. Ma trận đã verify (host Linux x86_64)
+
+| Target | Builder | Ghi chú |
+|--------|---------|--------|
+| `x86_64-unknown-linux-gnu` | `cargo` | Smoke-test trên host |
+| `x86_64-unknown-linux-musl` | `cross` (+ podman) | **Static-pie** — portable; smoke-test OK |
+| `aarch64-unknown-linux-gnu` | `cross` (+ podman) | Dynamic aarch64; chỉ build trên x86_64 |
+| `aarch64-unknown-linux-musl` | `cross` (+ podman) | **Static** aarch64; chỉ build |
+| `x86_64-pc-windows-gnu` | `cross` (+ podman) | `.exe` x86-64; chỉ build |
+| `aarch64-pc-windows-gnullvm` | `cargo-zigbuild` + zig 0.13 | `.exe` ARM64; chỉ build |
+| `aarch64-apple-darwin` | `cargo-zigbuild` + zig 0.13 + MacOSX11.3 SDK | Mach-O arm64; chỉ build |
+| `x86_64-apple-darwin` | `cargo-zigbuild` + zig 0.13 + MacOSX11.3 SDK | Mach-O x86_64; chỉ build |
+
+Tên artifact sau khi chạy multi script (ví dụ):
+
+```text
+dist/content-sync-v0.1.0-x86_64-unknown-linux-gnu
+dist/content-sync-v0.1.0-x86_64-unknown-linux-musl
+dist/content-sync-v0.1.0-aarch64-unknown-linux-gnu
+dist/content-sync-v0.1.0-aarch64-unknown-linux-musl
+dist/content-sync-v0.1.0-x86_64-pc-windows-gnu.exe
+dist/content-sync-v0.1.0-aarch64-pc-windows-gnullvm.exe
+dist/content-sync-v0.1.0-aarch64-apple-darwin
+dist/content-sync-v0.1.0-x86_64-apple-darwin
+dist/SHA256SUMS.txt
+```
+
+### 6. Xử lý lỗi thường gặp
+
+| Hiện tượng | Cách xử lý |
+|------------|------------|
+| macOS link: `unable to find framework 'CoreFoundation'` | Cài MacOSX SDK và set `SDKROOT` (mục 2.C) |
+| macOS link hỏng với Zig 0.14 | Chuyển symlink sang **Zig 0.13.x** |
+| `cross` fallback về cargo host | Cài podman/docker và set `CROSS_CONTAINER_ENGINE` |
+| Lần `cross` đầu rất chậm | Bình thường — đang pull `ghcr.io/cross-rs/<target>:main` |
+| Smoke test skipped | Đúng kỳ vọng với arch lạ / macOS / Windows trên Linux |
+| `zig: command not found` | Thêm `~/.local/bin` vào `PATH`, symlink trỏ đúng Zig 0.13 |
 
 ## Quick start
 

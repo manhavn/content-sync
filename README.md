@@ -38,8 +38,18 @@ Artifacts land in `dist/` as `content-sync-v<ver>-<target>[.exe]` (+ `SHA256SUMS
 **Builder preference (per target):** host `cargo` → `cargo-zigbuild`+zig → `cross`+podman/docker.
 
 - **Linux musl** builds are static (portable across distros).
-- **macOS / some Windows** need `cargo-zigbuild` + `zig` (or a native macOS/Windows host).
-- Smoke-tests `--version`/`--help` when the binary can run on this host; otherwise build-only.
+- **macOS** (from Linux): `cargo-zigbuild` + **zig 0.13.x** (0.14+ is flaky) + **MacOSX SDK**:
+  ```bash
+  # zig 0.13 → ~/.local/bin/zig
+  # SDK:
+  mkdir -p ~/.local/macos-sdk
+  curl -fL https://github.com/joseluisq/macosx-sdks/releases/download/11.3/MacOSX11.3.sdk.tar.xz \
+    | tar -xJ -C ~/.local/macos-sdk
+  export SDKROOT=$HOME/.local/macos-sdk/MacOSX11.3.sdk   # auto-detected by the script if present
+  ./scripts/build-release-multi.sh --only aarch64-apple-darwin,x86_64-apple-darwin
+  ```
+- **Windows** via `cross` (gnu) or zigbuild when available.
+- Smoke-tests `--version`/`--help` when the binary can run on this host; otherwise build-only (macOS/Windows on Linux).
 
 Host-only release (fmt + check + build): `./scripts/build-release.sh`.
 

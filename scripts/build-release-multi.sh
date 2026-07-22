@@ -22,6 +22,37 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Prefer user-local zig / cargo tools (e.g. ~/.local/bin/zig, ~/.cargo/bin/cargo-zigbuild)
+export PATH="${HOME}/.local/bin:${HOME}/.cargo/bin:${PATH}"
+
+# macOS cross-link needs Apple SDK frameworks (CoreFoundation, Security, …).
+# Install e.g.:
+#   curl -L https://github.com/joseluisq/macosx-sdks/releases/download/11.3/MacOSX11.3.sdk.tar.xz \
+#     | tar -xJ -C ~/.local/macos-sdk
+# Note: zig 0.13.x works more reliably than 0.14+ for apple-darwin with cargo-zigbuild.
+if [[ -z "${SDKROOT:-}" ]]; then
+  for _sdk in \
+    "${HOME}/.local/macos-sdk/MacOSX11.3.sdk" \
+    "${HOME}/.local/macos-sdk/MacOSX12.3.sdk" \
+    "${HOME}/.local/macos-sdk/MacOSX13.3.sdk" \
+    "${HOME}/.local/macos-sdk/MacOSX14.0.sdk"
+  do
+    if [[ -d "$_sdk" ]]; then
+      export SDKROOT="$_sdk"
+      break
+    fi
+  done
+  # glob fallback
+  if [[ -z "${SDKROOT:-}" ]]; then
+    for _sdk in "${HOME}"/.local/macos-sdk/MacOSX*.sdk; do
+      if [[ -d "$_sdk" ]]; then
+        export SDKROOT="$_sdk"
+        break
+      fi
+    done
+  fi
+fi
+
 BIN_NAME="content-sync"
 PKG_VERSION="$(
   grep -E '^version\s*=' "$ROOT/Cargo.toml" | head -1 \
@@ -101,6 +132,11 @@ if have cargo-zigbuild && have zig; then
   HAS_ZIGBUILD=1
 fi
 
+HAS_MACOS_SDK=0
+if [[ -n "${SDKROOT:-}" && -d "${SDKROOT}" ]]; then
+  HAS_MACOS_SDK=1
+fi
+
 HAS_CROSS=0
 if have cross && { have podman || have docker; }; then
   HAS_CROSS=1
@@ -155,6 +191,19 @@ select_builder() {
     echo cargo
     return
   fi
+  # apple-darwin needs SDK + zigbuild on non-mac hosts
+  if [[ "$t" == *apple-darwin* ]]; then
+    if [[ "$HAS_ZIGBUILD" -eq 1 && "$HAS_MACOS_SDK" -eq 1 ]]; then
+      echo zigbuild
+      return
+    fi
+    if [[ "$HAS_ZIGBUILD" -eq 0 ]]; then
+      echo "skip:need cargo-zigbuild+zig for macOS"
+      return
+    fi
+    echo "skip:need MacOSX SDK (set SDKROOT or install under ~/.local/macos-sdk)"
+    return
+  fi
   if [[ "$HAS_ZIGBUILD" -eq 1 ]] && zigbuild_ok "$t"; then
     echo zigbuild
     return
@@ -163,8 +212,8 @@ select_builder() {
     echo cross
     return
   fi
-  if [[ "$HAS_ZIGBUILD" -eq 0 ]] && zigbuild_ok "$t" && [[ "$t" == *apple-darwin* || "$t" == *windows* ]]; then
-    echo "skip:need cargo-zigbuild+zig (or macOS/Windows host)"
+  if [[ "$HAS_ZIGBUILD" -eq 0 ]] && zigbuild_ok "$t" && [[ "$t" == *windows* ]]; then
+    echo "skip:need cargo-zigbuild+zig (or Windows host)"
     return
   fi
   if [[ "$HAS_CROSS" -eq 0 ]] && cross_ok "$t"; then
@@ -317,7 +366,7 @@ done
 log "host: $HOST_TRIPLE ($HOST_OS $HOST_ARCH)"
 log "version: $PKG_VERSION"
 log "out: $OUT_DIR"
-log "tools: cargo-zigbuild=$([[ $HAS_ZIGBUILD -eq 1 ]] && echo yes || echo no) cross=$([[ $HAS_CROSS -eq 1 ]] && echo yes || echo no) engine=${CROSS_CONTAINER_ENGINE:-none}"
+log "tools: cargo-zigbuild=$([[ $HAS_ZIGBUILD -eq 1 ]] && echo yes || echo no) zig=$(have zig && zig version 2>/dev/null || echo no) macos-sdk=$([[ $HAS_MACOS_SDK -eq 1 ]] && echo "${SDKROOT}" || echo no) cross=$([[ $HAS_CROSS -eq 1 ]] && echo yes || echo no) engine=${CROSS_CONTAINER_ENGINE:-none}"
 
 if [[ "$LIST_ONLY" -eq 1 ]]; then
   printf '\n%-40s %s\n' "TARGET" "BUILDER"

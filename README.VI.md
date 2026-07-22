@@ -38,8 +38,16 @@ Artifact trong `dist/`: `content-sync-v<ver>-<target>[.exe]` (+ `SHA256SUMS.txt`
 **Ưu tiên builder:** host `cargo` → `cargo-zigbuild`+zig → `cross`+podman/docker.
 
 - **Linux musl** = static (không phụ thuộc distro).
-- **macOS / một số Windows** cần `cargo-zigbuild` + `zig` (hoặc máy native).
-- Smoke-test `--version`/`--help` khi chạy được trên host; không chạy được thì chỉ build.
+- **macOS** (build từ Linux): `cargo-zigbuild` + **zig 0.13.x** (0.14+ hay lỗi) + **MacOSX SDK**:
+  ```bash
+  mkdir -p ~/.local/macos-sdk
+  curl -fL https://github.com/joseluisq/macosx-sdks/releases/download/11.3/MacOSX11.3.sdk.tar.xz \
+    | tar -xJ -C ~/.local/macos-sdk
+  export SDKROOT=$HOME/.local/macos-sdk/MacOSX11.3.sdk
+  ./scripts/build-release-multi.sh --only aarch64-apple-darwin,x86_64-apple-darwin
+  ```
+- **Windows** qua `cross` (gnu) hoặc zigbuild.
+- Smoke-test `--version`/`--help` khi chạy được trên host; macOS/Windows trên Linux chỉ build.
 
 Release host-only: `./scripts/build-release.sh`.
 

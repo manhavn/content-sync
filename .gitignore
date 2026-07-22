@@ -1,2 +1,4 @@
 /target
 /dist
+# cargo-zigbuild may drop this in the workspace root
+.intentionally-empty-file.o

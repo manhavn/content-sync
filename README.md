@@ -11,7 +11,7 @@ Rust CLI to bidirectionally sync **raw files** (any format) with one or more dat
 - **Multi-file** — each watch dir can hold many raw files (any format)
 - **Pull/push** — independent per connection (many DBs / tables / dirs at once)
 - **Web UI** — files (pick a connection), connections, auth tokens, settings
-- **Local config** — `~/.content-sync/config.sqlite`
+- **Local config** — `~/.content-sync/config-sqlite`
 
 ## Install
 
@@ -526,7 +526,7 @@ Remote schema (every SQL driver / Mongo document): `id`, `file_name` (unique), `
 
 | Path | Contents |
 |------|----------|
-| `~/.content-sync/config.sqlite` | Auth tokens, connections, settings, cache, sessions |
+| `~/.content-sync/config-sqlite` | Auth tokens, connections, settings, cache, sessions (suffix `-sqlite`, not `.sqlite`, for GCS-friendly paths) |
 | `~/.content-sync/files/<name>/` | Default watch dir per connection (one dir each) |
 | `~/.content-sync/content-sync.pid` | PID of the background daemon (`background` / `quit`) |
 | `~/.content-sync/content-sync.log` | stdout/stderr of the background daemon |

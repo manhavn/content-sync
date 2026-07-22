@@ -443,7 +443,7 @@ pub struct Settings {
     pub watch_dir: String,
     /// When true, run full pull+push on a timer (`poll_interval_secs`).
     /// When false, only initial sync at start + file-watcher / manual Sync now.
-    /// Persisted in config.sqlite; survives restarts. Default true.
+    /// Persisted in config-sqlite; survives restarts. Default true.
     #[serde(default = "default_auto_poll")]
     pub auto_poll: bool,
     /// Normal poll interval when connections are healthy (used only if `auto_poll` is true)

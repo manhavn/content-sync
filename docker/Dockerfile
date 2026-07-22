@@ -52,7 +52,7 @@ USER appsync
 # Override: … content-sync serve --bind 0.0.0.0:$PORT --no-log
 EXPOSE 8080
 
-# Persist config.sqlite, tokens, pid, logs, and per-connection files
+# Persist config-sqlite, tokens, pid, logs, and per-connection files
 VOLUME ["/data"]
 
 ENTRYPOINT ["/usr/local/bin/content-sync"]

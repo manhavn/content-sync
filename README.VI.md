@@ -11,7 +11,7 @@ CLI Rust đồng bộ **file raw** (mọi định dạng) với một hoặc nhi
 - **Multi-file** — mỗi dir chứa nhiều file raw (mọi định dạng)
 - **Pull/push** — theo từng connection độc lập (nhiều DB / nhiều bảng / nhiều dir cùng lúc)
 - **Web UI** — files (chọn connection), connections, auth tokens, settings
-- **Config local** — `~/.content-sync/config.sqlite`
+- **Config local** — `~/.content-sync/config-sqlite`
 
 ## Cài đặt
 
@@ -525,7 +525,7 @@ Remote schema (mọi driver SQL / Mongo document): `id`, `file_name` (unique), `
 
 | Path | Nội dung |
 |------|----------|
-| `~/.content-sync/config.sqlite` | Auth tokens, connections, settings, cache, sessions |
+| `~/.content-sync/config-sqlite` | Auth tokens, connections, settings, cache, sessions (hậu tố `-sqlite`, không dùng `.sqlite` — thân thiện GCS) |
 | `~/.content-sync/files/<name>/` | Watch dir mặc định theo connection (mỗi connection một dir) |
 | `~/.content-sync/content-sync.pid` | PID daemon background (`background` / `quit`) |
 | `~/.content-sync/content-sync.log` | stdout/stderr của daemon background |

@@ -11,9 +11,36 @@ pub fn config_dir() -> PathBuf {
         .join(".content-sync")
 }
 
-/// Local SQLite config path: `~/.content-sync/config.sqlite`
+/// Local config DB path: `~/.content-sync/config-sqlite`
+///
+/// Uses a `-sqlite` suffix (not `.sqlite`) so object stores / scanners that
+/// block the `.sqlite` extension (e.g. some GCS policies) still accept the file.
 pub fn config_db_path() -> PathBuf {
-    config_dir().join("config.sqlite")
+    config_dir().join("config-sqlite")
+}
+
+/// Rename legacy `config.sqlite` (+ WAL/SHM/journal sidecars) to `config-sqlite`
+/// when the new path does not exist yet. Best-effort; ignores errors.
+pub fn migrate_legacy_config_db() {
+    let dir = config_dir();
+    let new_main = dir.join("config-sqlite");
+    let old_main = dir.join("config.sqlite");
+    if new_main.exists() || !old_main.exists() {
+        return;
+    }
+    let pairs = [
+        ("config.sqlite", "config-sqlite"),
+        ("config.sqlite-wal", "config-sqlite-wal"),
+        ("config.sqlite-shm", "config-sqlite-shm"),
+        ("config.sqlite-journal", "config-sqlite-journal"),
+    ];
+    for (from, to) in pairs {
+        let src = dir.join(from);
+        let dst = dir.join(to);
+        if src.exists() && !dst.exists() {
+            let _ = std::fs::rename(&src, &dst);
+        }
+    }
 }
 
 /// PID file for the background daemon: `~/.content-sync/content-sync.pid`

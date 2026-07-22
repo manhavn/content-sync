@@ -301,6 +301,8 @@ fn print_connection(c: &Connection) {
 
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
     config::ensure_config_dir()?;
+    // Legacy `config.sqlite` → `config-sqlite` (avoid blocked `.sqlite` suffix on GCS)
+    config::migrate_legacy_config_db();
     let db_path = config::config_db_path();
     let db = ConfigDb::open(&db_path)?;
 
@@ -415,7 +417,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let tokens = db.list_auth_tokens()?;
             let files = db.list_file_cache()?;
             println!("Config dir     : {}", config::config_dir().display());
-            println!("Config sqlite  : {}", db_path.display());
+            println!("Config db      : {}", db_path.display());
             println!("Default files  : {}", s.default_files_root);
             println!(
                 "Auto poll      : {}{}",

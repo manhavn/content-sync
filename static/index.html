@@ -36,9 +36,20 @@
 
     <!-- Main -->
     <section id="main-view" class="hidden">
-      <aside class="sidebar">
+      <!-- Mobile top bar: logo toggles off-canvas menu -->
+      <header class="mobile-bar" id="mobile-bar">
+        <button type="button" class="mobile-menu-btn" id="btn-mobile-menu" aria-label="Menu" aria-expanded="false" aria-controls="app-sidebar">
+          <span class="logo sm" aria-hidden="true">CS</span>
+          <span class="mobile-menu-label">
+            <strong data-i18n="app_name">Content Sync</strong>
+            <span class="muted small" id="user-name-mobile">—</span>
+          </span>
+        </button>
+      </header>
+      <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
+      <aside class="sidebar" id="app-sidebar" aria-label="Navigation">
         <div class="brand side">
-          <div class="logo sm">CS</div>
+          <button type="button" class="logo sm sidebar-logo-btn" id="btn-sidebar-logo" aria-label="Close menu">CS</button>
           <div>
             <strong data-i18n="app_name">Content Sync</strong>
             <div class="muted small" id="user-name">—</div>

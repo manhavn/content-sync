@@ -304,6 +304,7 @@ function toast(msg, isErr = false) {
 }
 
 function showLogin() {
+  closeSidebar();
   $("#login-view").classList.remove("hidden");
   $("#main-view").classList.add("hidden");
 }
@@ -313,13 +314,72 @@ function showMain() {
   $("#main-view").classList.remove("hidden");
 }
 
+// ── Mobile off-canvas sidebar ─────────────────────────────────
+function isMobileNav() {
+  return window.matchMedia("(max-width: 800px)").matches;
+}
+
+function openSidebar() {
+  if (!isMobileNav()) return;
+  document.body.classList.add("sidebar-open");
+  const btn = $("#btn-mobile-menu");
+  const backdrop = $("#sidebar-backdrop");
+  if (btn) btn.setAttribute("aria-expanded", "true");
+  if (backdrop) backdrop.hidden = false;
+}
+
+function closeSidebar() {
+  document.body.classList.remove("sidebar-open");
+  const btn = $("#btn-mobile-menu");
+  const backdrop = $("#sidebar-backdrop");
+  if (btn) btn.setAttribute("aria-expanded", "false");
+  if (backdrop) backdrop.hidden = true;
+}
+
+function toggleSidebar() {
+  if (document.body.classList.contains("sidebar-open")) closeSidebar();
+  else openSidebar();
+}
+
+function initSidebarDrawer() {
+  const menuBtn = $("#btn-mobile-menu");
+  const logoBtn = $("#btn-sidebar-logo");
+  const backdrop = $("#sidebar-backdrop");
+
+  if (menuBtn) {
+    menuBtn.onclick = (e) => {
+      e.preventDefault();
+      toggleSidebar();
+    };
+  }
+  // Logo inside drawer closes on mobile (desktop: no-op)
+  if (logoBtn) {
+    logoBtn.onclick = (e) => {
+      e.preventDefault();
+      if (isMobileNav()) closeSidebar();
+    };
+  }
+  if (backdrop) {
+    backdrop.onclick = () => closeSidebar();
+  }
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSidebar();
+  });
+  window.addEventListener("resize", () => {
+    if (!isMobileNav()) closeSidebar();
+  });
+}
+
 // ── Auth ──────────────────────────────────────────────────────
 async function trySession() {
   if (!state.sessionId) { showLogin(); return false; }
   try {
     const me = await api("/api/me");
     state.user = me;
-    $("#user-name").textContent = me.name || "user";
+    const uname = me.name || "user";
+    $("#user-name").textContent = uname;
+    const unameMobile = $("#user-name-mobile");
+    if (unameMobile) unameMobile.textContent = uname;
     showMain();
     await refreshAll();
     return true;
@@ -363,6 +423,7 @@ $$(".nav").forEach((btn) => {
     btn.classList.add("active");
     $$(".tab").forEach((tEl) => tEl.classList.add("hidden"));
     $(`#tab-${btn.dataset.tab}`).classList.remove("hidden");
+    closeSidebar();
     if (btn.dataset.tab === "dashboard") loadDashboard();
     if (btn.dataset.tab === "files") loadFiles();
     if (btn.dataset.tab === "connections") loadConnections();
@@ -814,6 +875,7 @@ function escAttr(s) { return esc(s).replace(/'/g, "&#39;"); }
 // boot
 initLangToggles();
 initListFilters();
+initSidebarDrawer();
 trySession();
 setInterval(() => {
   if (state.sessionId && !$("#tab-dashboard").classList.contains("hidden")) {

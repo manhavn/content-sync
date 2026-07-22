@@ -266,6 +266,140 @@ dist/SHA256SUMS.txt
 | Smoke test skipped | Expected for non-native arch / macOS / Windows on Linux |
 | `zig: command not found` | Ensure `~/.local/bin` is on `PATH` and symlink points to Zig 0.13 |
 
+## Container image (registry push)
+
+Script: [`scripts/registry-image-push.sh`](./scripts/registry-image-push.sh)  
+Dockerfile: [`docker/Dockerfile`](./docker/Dockerfile) (Alpine + static **linux musl** binary)
+
+### What it does
+
+1. Builds musl binaries via [`scripts/build-release-multi.sh`](./scripts/build-release-multi.sh) (`x86_64` + `aarch64` by default)
+2. Stages them under `docker/binaries/{amd64,arm64}/`
+3. Builds a multi-arch runtime image (Podman preferred, else Docker/buildx)
+4. Logs in and pushes tags to one or more registries
+
+### Runtime image
+
+| Item | Value |
+|------|--------|
+| Base | `docker.io/library/alpine:latest` |
+| Binary | Static musl `content-sync` |
+| Default CMD | `serve --bind 0.0.0.0:8080 --no-log` |
+| Port | **8080** (Cloud Run–friendly) |
+| Volume | `/data` (= `HOME` → config at `/data/.content-sync`) |
+| User | non-root `appsync` (uid 1000) |
+
+### Engine
+
+- **Default (`--engine auto`):** prefer **Podman**, then Docker
+- Force: `--engine podman` or `--engine docker` (or `CONTAINER_ENGINE=…`)
+
+### Common commands
+
+```bash
+# Full help
+scripts/registry-image-push.sh --help
+
+# Local image only (host arch), no push
+scripts/registry-image-push.sh --no-push --load
+
+# Reuse existing dist/*-linux-musl binaries
+scripts/registry-image-push.sh --skip-binary-build --no-push --load
+
+# Dry-run (print plan)
+scripts/registry-image-push.sh --to dockerhub --dry-run --skip-binary-build
+```
+
+Run the image:
+
+```bash
+# Podman or Docker
+podman run --rm -p 8080:8080 -v content-sync-data:/data content-sync:0.1.0
+# Web UI → http://127.0.0.1:8080
+```
+
+### Push to registries
+
+Prefer env vars for secrets (not shell history). Tags default to **Cargo version** + `latest`.
+
+#### Docker Hub
+
+```bash
+export DOCKERHUB_USER=myuser
+export DOCKERHUB_TOKEN=***          # access token
+scripts/registry-image-push.sh --to dockerhub --image content-sync
+# → docker.io/myuser/content-sync:<version>
+```
+
+#### GitHub Container Registry (GHCR)
+
+```bash
+export GHCR_USER=myuser
+export GHCR_TOKEN=ghp_***           # PAT: read:packages, write:packages
+scripts/registry-image-push.sh --to ghcr --image content-sync
+# → ghcr.io/myuser/content-sync:<version>
+```
+
+#### Google Artifact Registry (recommended over legacy GCR)
+
+```bash
+# One-time: create a Docker repo
+gcloud artifacts repositories create content-sync \
+  --repository-format=docker --location=us-central1 --project=my-proj
+
+export GCP_PROJECT=my-proj
+export GCP_REGION=us-central1
+export GCP_REPOSITORY=content-sync
+# Auth A — gcloud (dev)
+gcloud auth login
+gcloud auth configure-docker us-central1-docker.pkg.dev
+# Auth B — service account JSON (CI)
+# export GCP_SA_KEY_FILE=./sa-key.json
+
+scripts/registry-image-push.sh --to gar --image content-sync
+# → us-central1-docker.pkg.dev/my-proj/content-sync/content-sync:<version>
+```
+
+Legacy GCR: `--to gcr --project my-proj` → `gcr.io/my-proj/content-sync:<version>`.
+
+#### Quay.io / custom registry
+
+```bash
+export QUAY_USER=… QUAY_TOKEN=…
+scripts/registry-image-push.sh --to quay
+
+export REGISTRY_HOST=registry.example.com REGISTRY_USER=u REGISTRY_TOKEN=t
+scripts/registry-image-push.sh --to custom --image org/content-sync
+```
+
+#### Several hubs at once
+
+```bash
+scripts/registry-image-push.sh --to dockerhub,ghcr --skip-binary-build
+```
+
+### Useful flags
+
+| Flag | Meaning |
+|------|---------|
+| `--to HUB[,HUB…]` | `dockerhub`, `ghcr`, `gcr`, `gar`, `quay`, `custom` |
+| `--engine auto\|podman\|docker` | Container engine (default: auto → podman first) |
+| `--image NAME` | Image name (default: `content-sync`) |
+| `--tag TAG[,…]` | Override tags (default: `<version>,latest`) |
+| `--platforms LIST` | Default `linux/amd64,linux/arm64` |
+| `--skip-binary-build` | Use existing `dist/*-linux-musl` |
+| `--no-push` | Build only |
+| `--load` | Load into local engine (single/host arch) |
+| `--project` / `--region` / `--repository` | GCP / GAR |
+| `--username` / `--token` / `--namespace` | Override credentials |
+| `--dry-run` | Print actions only |
+
+### Cloud Run notes
+
+- Image already binds **`0.0.0.0:8080`** with **`--no-log`** (matches common Cloud Run container port).
+- Mount a volume at **`/data`** if you need persistent config / files.
+- **Web UI “Restart app”** self-restarts the process inside the container; on Cloud Run that can stop the instance — prefer **redeploy** for process-level changes in managed environments.
+
 ## Quick start
 
 ```bash

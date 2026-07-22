@@ -1,4 +1,6 @@
 /target
 /dist
+# Staged by scripts/registry-image-push.sh (musl binaries for image build)
+/docker/binaries
 # cargo-zigbuild may drop this in the workspace root
 .intentionally-empty-file.o

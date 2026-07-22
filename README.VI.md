@@ -266,6 +266,139 @@ dist/SHA256SUMS.txt
 | Smoke test skipped | Đúng kỳ vọng với arch lạ / macOS / Windows trên Linux |
 | `zig: command not found` | Thêm `~/.local/bin` vào `PATH`, symlink trỏ đúng Zig 0.13 |
 
+## Container image (đẩy lên registry)
+
+Script: [`scripts/registry-image-push.sh`](./scripts/registry-image-push.sh)  
+Dockerfile: [`docker/Dockerfile`](./docker/Dockerfile) (Alpine + binary **linux musl** static)
+
+### Pipeline
+
+1. Build binary musl qua [`scripts/build-release-multi.sh`](./scripts/build-release-multi.sh) (`x86_64` + `aarch64` mặc định)
+2. Stage vào `docker/binaries/{amd64,arm64}/`
+3. Build image multi-arch (ưu tiên **Podman**, không có thì Docker/buildx)
+4. Login + push tag lên một hoặc nhiều registry
+
+### Runtime image
+
+| Mục | Giá trị |
+|-----|---------|
+| Base | `docker.io/library/alpine:latest` |
+| Binary | Static musl `content-sync` |
+| CMD mặc định | `serve --bind 0.0.0.0:8080 --no-log` |
+| Port | **8080** (phù hợp Cloud Run) |
+| Volume | `/data` (= `HOME` → config tại `/data/.content-sync`) |
+| User | non-root `appsync` (uid 1000) |
+
+### Engine
+
+- **Mặc định (`--engine auto`):** ưu tiên **Podman**, sau đó Docker
+- Ép: `--engine podman` hoặc `--engine docker` (hoặc `CONTAINER_ENGINE=…`)
+
+### Lệnh thường dùng
+
+```bash
+# Xem help đầy đủ
+scripts/registry-image-push.sh --help
+
+# Chỉ build local (arch host), không push
+scripts/registry-image-push.sh --no-push --load
+
+# Dùng sẵn binary dist/*-linux-musl
+scripts/registry-image-push.sh --skip-binary-build --no-push --load
+
+# Dry-run (in plan, không thực thi)
+scripts/registry-image-push.sh --to dockerhub --dry-run --skip-binary-build
+```
+
+Chạy image:
+
+```bash
+podman run --rm -p 8080:8080 -v content-sync-data:/data content-sync:0.1.0
+# Web UI → http://127.0.0.1:8080
+```
+
+### Push lên registry
+
+Nên dùng biến môi trường cho secret (tránh lưu token trong history). Tag mặc định: **version Cargo** + `latest`.
+
+#### Docker Hub
+
+```bash
+export DOCKERHUB_USER=myuser
+export DOCKERHUB_TOKEN=***
+scripts/registry-image-push.sh --to dockerhub --image content-sync
+# → docker.io/myuser/content-sync:<version>
+```
+
+#### GitHub Container Registry (GHCR)
+
+```bash
+export GHCR_USER=myuser
+export GHCR_TOKEN=ghp_***           # PAT: read:packages, write:packages
+scripts/registry-image-push.sh --to ghcr --image content-sync
+# → ghcr.io/myuser/content-sync:<version>
+```
+
+#### Google Artifact Registry (nên dùng thay GCR legacy)
+
+```bash
+# Một lần: tạo Docker repo
+gcloud artifacts repositories create content-sync \
+  --repository-format=docker --location=us-central1 --project=my-proj
+
+export GCP_PROJECT=my-proj
+export GCP_REGION=us-central1
+export GCP_REPOSITORY=content-sync
+# Auth A — gcloud (dev)
+gcloud auth login
+gcloud auth configure-docker us-central1-docker.pkg.dev
+# Auth B — service account JSON (CI)
+# export GCP_SA_KEY_FILE=./sa-key.json
+
+scripts/registry-image-push.sh --to gar --image content-sync
+# → us-central1-docker.pkg.dev/my-proj/content-sync/content-sync:<version>
+```
+
+GCR cũ: `--to gcr --project my-proj` → `gcr.io/my-proj/content-sync:<version>`.
+
+#### Quay.io / registry tùy chỉnh
+
+```bash
+export QUAY_USER=… QUAY_TOKEN=…
+scripts/registry-image-push.sh --to quay
+
+export REGISTRY_HOST=registry.example.com REGISTRY_USER=u REGISTRY_TOKEN=t
+scripts/registry-image-push.sh --to custom --image org/content-sync
+```
+
+#### Nhiều hub một lần
+
+```bash
+scripts/registry-image-push.sh --to dockerhub,ghcr --skip-binary-build
+```
+
+### Cờ hữu ích
+
+| Cờ | Ý nghĩa |
+|----|---------|
+| `--to HUB[,HUB…]` | `dockerhub`, `ghcr`, `gcr`, `gar`, `quay`, `custom` |
+| `--engine auto\|podman\|docker` | Engine (mặc định auto → podman trước) |
+| `--image NAME` | Tên image (mặc định `content-sync`) |
+| `--tag TAG[,…]` | Ghi đè tag (mặc định `<version>,latest`) |
+| `--platforms LIST` | Mặc định `linux/amd64,linux/arm64` |
+| `--skip-binary-build` | Dùng sẵn `dist/*-linux-musl` |
+| `--no-push` | Chỉ build |
+| `--load` | Load vào engine local (single/host arch) |
+| `--project` / `--region` / `--repository` | GCP / GAR |
+| `--username` / `--token` / `--namespace` | Ghi đè credential |
+| `--dry-run` | Chỉ in lệnh |
+
+### Ghi chú Cloud Run
+
+- Image đã bind **`0.0.0.0:8080`** kèm **`--no-log`** (khớp container port phổ biến trên Cloud Run).
+- Mount volume tại **`/data`** nếu cần giữ config / file.
+- Nút **Restart app** trên Web UI tự restart process trong container; trên Cloud Run có thể làm instance shutdown — môi trường managed nên **redeploy** khi cần thay đổi cấp process.
+
 ## Quick start
 
 ```bash

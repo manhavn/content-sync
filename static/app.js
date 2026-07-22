@@ -691,7 +691,7 @@ function openConnModal(id, existing) {
       <option value="mongodb" ${drv === "mongodb" ? "selected" : ""}>${esc(t("driver_mongodb"))}</option>
     </select>
     <label>${esc(t("label_table"))}</label>
-    <input id="m-table" value="${escAttr(existing?.table_name || "content_syncs")}" placeholder="content_syncs" />
+    <input id="m-table" value="${escAttr(existing?.table_name || "")}" placeholder="content_syncs" />
     <label>${esc(t("label_watch_dir_conn"))}</label>
     <input id="m-watch" value="${escAttr(existing?.watch_dir || "")}" placeholder="~/.content-sync/files/prod" />
     <label>${esc(t("label_db_url"))}</label>
@@ -704,15 +704,17 @@ function openConnModal(id, existing) {
     </label>
     <p class="muted small">${t("conn_sdk_hint")}</p>`;
   openModal(async () => {
+    const tableName = $("#m-table").value.trim();
     const body = {
       name: $("#m-name").value.trim(),
       driver: $("#m-driver").value,
-      table_name: $("#m-table").value.trim() || "content_syncs",
       watch_dir: $("#m-watch").value.trim() || undefined,
       url: $("#m-url").value.trim(),
       access_token: $("#m-token").value.trim(),
       enabled: $("#m-enabled").checked,
     };
+    // Only send when set — create uses API default if omitted; edit keeps existing if cleared
+    if (tableName) body.table_name = tableName;
     if (!body.name || !body.url) throw new Error(t("name_url_required"));
     const needsToken = body.driver === "sql_api" || body.driver === "libsql";
     if (id) {

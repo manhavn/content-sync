@@ -366,6 +366,8 @@ impl ConfigDb {
 
         // Settings use key/value rows (own lock) — after transaction
         self.save_settings(&data.settings)?;
+        // At most one enabled connection per pipeline after import
+        let _ = self.enforce_all_pipeline_exclusivity()?;
         Ok(())
     }
 
@@ -641,7 +643,7 @@ impl ConfigDb {
         watch_dir: Option<&str>,
         driver: ConnectionDriver,
         enabled: bool,
-    ) -> Result<Connection> {
+    ) -> Result<(Connection, Vec<String>)> {
         let table_name = validate_table_name(table_name)?;
         let watch_dir = watch_dir
             .map(str::trim)
@@ -665,26 +667,129 @@ impl ConfigDb {
             last_error: None,
             last_sync_at: None,
         };
-        let conn = self.conn.lock();
-        conn.execute(
-            "INSERT INTO connections(id, name, url, access_token, enabled, created_at, updated_at, last_error, last_sync_at, table_name, driver, watch_dir)
-             VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
-            params![
-                c.id,
-                c.name,
-                c.url,
-                c.access_token,
-                if c.enabled { 1i32 } else { 0 },
-                c.created_at,
-                c.updated_at,
-                Option::<String>::None,
-                Option::<String>::None,
-                c.table_name,
-                c.driver.as_str(),
-                c.watch_dir
-            ],
+        {
+            let conn = self.conn.lock();
+            conn.execute(
+                "INSERT INTO connections(id, name, url, access_token, enabled, created_at, updated_at, last_error, last_sync_at, table_name, driver, watch_dir)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                params![
+                    c.id,
+                    c.name,
+                    c.url,
+                    c.access_token,
+                    if c.enabled { 1i32 } else { 0 },
+                    c.created_at,
+                    c.updated_at,
+                    Option::<String>::None,
+                    Option::<String>::None,
+                    c.table_name,
+                    c.driver.as_str(),
+                    c.watch_dir
+                ],
+            )?;
+        }
+        let disabled = if c.enabled {
+            self.disable_conflicting_enabled(&c.id)?
+        } else {
+            Vec::new()
+        };
+        Ok((c, disabled))
+    }
+
+    /// Clone connection config: new id/name, always disabled, clear last_error / last_sync_at.
+    /// Copies driver, url, access_token, table_name, watch_dir.
+    pub fn clone_connection(&self, id: &str) -> Result<Connection> {
+        let src = self
+            .get_connection(id)?
+            .ok_or_else(|| anyhow!("connection not found"))?;
+        let name = self.next_clone_name(&src.name)?;
+        let (c, _) = self.create_connection(
+            &name,
+            &src.url,
+            &src.access_token,
+            &src.table_name,
+            Some(&src.watch_dir),
+            src.driver,
+            false,
         )?;
         Ok(c)
+    }
+
+    fn next_clone_name(&self, base: &str) -> Result<String> {
+        let names: std::collections::HashSet<String> = self
+            .list_connections()?
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        let first = format!("{base} (copy)");
+        if !names.contains(&first) {
+            return Ok(first);
+        }
+        for i in 2..10_000 {
+            let candidate = format!("{base} (copy {i})");
+            if !names.contains(&candidate) {
+                return Ok(candidate);
+            }
+        }
+        Ok(format!("{base} (copy {})", uuid::Uuid::new_v4()))
+    }
+
+    /// Disable other *enabled* connections that share the same pipeline as `keep_id`.
+    /// Pipeline key: driver + table/collection + watch_dir + url.
+    /// Returns names of connections that were turned off.
+    pub fn disable_conflicting_enabled(&self, keep_id: &str) -> Result<Vec<String>> {
+        let keep = self
+            .get_connection(keep_id)?
+            .ok_or_else(|| anyhow!("connection not found"))?;
+        if !keep.enabled {
+            return Ok(Vec::new());
+        }
+        let others = self.list_connections()?;
+        let mut disabled = Vec::new();
+        for other in others {
+            if other.id == keep.id || !other.enabled {
+                continue;
+            }
+            if same_sync_pipeline(&keep, &other) {
+                self.set_connection_enabled_flag(&other.id, false)?;
+                disabled.push(other.name);
+            }
+        }
+        Ok(disabled)
+    }
+
+    /// Keep at most one enabled connection per pipeline (oldest `created_at` wins).
+    /// Used after bulk import. Returns how many were turned off.
+    pub fn enforce_all_pipeline_exclusivity(&self) -> Result<usize> {
+        let mut enabled: Vec<Connection> = self
+            .list_connections()?
+            .into_iter()
+            .filter(|c| c.enabled)
+            .collect();
+        enabled.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+        let mut kept: Vec<Connection> = Vec::new();
+        let mut n = 0usize;
+        for c in enabled {
+            if kept.iter().any(|k| same_sync_pipeline(k, &c)) {
+                self.set_connection_enabled_flag(&c.id, false)?;
+                n += 1;
+            } else {
+                kept.push(c);
+            }
+        }
+        Ok(n)
+    }
+
+    fn set_connection_enabled_flag(&self, id: &str, enabled: bool) -> Result<()> {
+        let conn = self.conn.lock();
+        let n = conn.execute(
+            "UPDATE connections SET enabled = ?1, updated_at = ?2 WHERE id = ?3",
+            params![if enabled { 1i32 } else { 0 }, now_rfc3339(), id],
+        )?;
+        if n == 0 {
+            return Err(anyhow!("connection not found"));
+        }
+        Ok(())
     }
 
     pub fn list_connections(&self) -> Result<Vec<Connection>> {
@@ -719,6 +824,25 @@ impl ConfigDb {
         Ok(row)
     }
 
+    /// Find by exact name (case-sensitive) or by id.
+    pub fn find_connection(&self, name_or_id: &str) -> Result<Option<Connection>> {
+        {
+            let conn = self.conn.lock();
+            let mut stmt = conn.prepare(
+                "SELECT id, name, url, access_token, enabled, created_at, updated_at, last_error, last_sync_at, table_name, driver, watch_dir
+                 FROM connections WHERE name = ?1 LIMIT 1",
+            )?;
+            let by_name = stmt
+                .query_row(params![name_or_id], Self::map_connection)
+                .optional()?;
+            if by_name.is_some() {
+                return Ok(by_name);
+            }
+        }
+        self.get_connection(name_or_id)
+    }
+
+    /// Returns `(connection, names of auto-disabled pipeline conflicts)`.
     pub fn update_connection(
         &self,
         id: &str,
@@ -729,7 +853,7 @@ impl ConfigDb {
         watch_dir: Option<&str>,
         driver: Option<ConnectionDriver>,
         enabled: Option<bool>,
-    ) -> Result<Connection> {
+    ) -> Result<(Connection, Vec<String>)> {
         let mut c = self
             .get_connection(id)?
             .ok_or_else(|| anyhow!("connection not found"))?;
@@ -764,22 +888,32 @@ impl ConfigDb {
             c.enabled = e;
         }
         c.updated_at = now_rfc3339();
-        let conn = self.conn.lock();
-        conn.execute(
-            "UPDATE connections SET name=?1, url=?2, access_token=?3, enabled=?4, updated_at=?5, table_name=?6, driver=?7, watch_dir=?8 WHERE id=?9",
-            params![
-                c.name,
-                c.url,
-                c.access_token,
-                if c.enabled { 1i32 } else { 0 },
-                c.updated_at,
-                c.table_name,
-                c.driver.as_str(),
-                c.watch_dir,
-                id
-            ],
-        )?;
-        Ok(c)
+        {
+            let conn = self.conn.lock();
+            conn.execute(
+                "UPDATE connections SET name=?1, url=?2, access_token=?3, enabled=?4, updated_at=?5, table_name=?6, driver=?7, watch_dir=?8 WHERE id=?9",
+                params![
+                    c.name,
+                    c.url,
+                    c.access_token,
+                    if c.enabled { 1i32 } else { 0 },
+                    c.updated_at,
+                    c.table_name,
+                    c.driver.as_str(),
+                    c.watch_dir,
+                    id
+                ],
+            )?;
+        }
+        let disabled = if c.enabled {
+            self.disable_conflicting_enabled(&c.id)?
+        } else {
+            Vec::new()
+        };
+        if let Ok(Some(fresh)) = self.get_connection(id) {
+            c = fresh;
+        }
+        Ok((c, disabled))
     }
 
     pub fn set_connection_status(

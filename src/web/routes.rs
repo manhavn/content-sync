@@ -40,6 +40,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         )
         .route("/api/connections/{id}/test", post(test_connection))
         .route("/api/connections/{id}/toggle", post(toggle_connection))
+        .route("/api/connections/{id}/clone", post(clone_connection))
         // Auth tokens (web UI login keys)
         .route(
             "/api/auth-tokens",
@@ -368,7 +369,7 @@ async fn create_connection(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Json(body): Json<ConnectionBody>,
-) -> Result<Json<ConnectionView>, ApiError> {
+) -> Result<Json<ConnectionMutationResult>, ApiError> {
     require_auth(&state, &headers).await?;
     if body.name.trim().is_empty() || body.url.trim().is_empty() {
         return Err(ApiError::bad_request("name and url are required"));
@@ -385,7 +386,7 @@ async fn create_connection(
             "access_token is required for sql_api and libsql drivers",
         ));
     }
-    let c = state
+    let (c, disabled) = state
         .db
         .create_connection(
             &body.name,
@@ -398,7 +399,7 @@ async fn create_connection(
         )
         .map_err(ApiError::internal)?;
     state.request_reload();
-    Ok(Json(ConnectionView::from(&c)))
+    Ok(Json(ConnectionMutationResult::new(&c, disabled)))
 }
 
 async fn get_connection(
@@ -431,7 +432,7 @@ async fn update_connection(
     headers: HeaderMap,
     Path(id): Path<String>,
     Json(body): Json<ConnectionUpdate>,
-) -> Result<Json<ConnectionView>, ApiError> {
+) -> Result<Json<ConnectionMutationResult>, ApiError> {
     require_auth(&state, &headers).await?;
     let driver = body
         .driver
@@ -439,7 +440,7 @@ async fn update_connection(
         .map(crate::models::ConnectionDriver::parse)
         .transpose()
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let c = state
+    let (c, disabled) = state
         .db
         .update_connection(
             &id,
@@ -453,7 +454,7 @@ async fn update_connection(
         )
         .map_err(ApiError::internal)?;
     state.request_reload();
-    Ok(Json(ConnectionView::from(&c)))
+    Ok(Json(ConnectionMutationResult::new(&c, disabled)))
 }
 
 async fn delete_connection(
@@ -525,19 +526,38 @@ async fn toggle_connection(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     Path(id): Path<String>,
-) -> Result<Json<ConnectionView>, ApiError> {
+) -> Result<Json<ConnectionMutationResult>, ApiError> {
     require_auth(&state, &headers).await?;
     let c = state
         .db
         .get_connection(&id)
         .map_err(ApiError::internal)?
         .ok_or_else(|| ApiError::not_found("connection not found"))?;
-    let c = state
+    let (c, disabled) = state
         .db
         .update_connection(&id, None, None, None, None, None, None, Some(!c.enabled))
         .map_err(ApiError::internal)?;
     state.request_reload();
-    Ok(Json(ConnectionView::from(&c)))
+    Ok(Json(ConnectionMutationResult::new(&c, disabled)))
+}
+
+async fn clone_connection(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<Json<ConnectionMutationResult>, ApiError> {
+    require_auth(&state, &headers).await?;
+    let c = state.db.clone_connection(&id).map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("not found") {
+            ApiError::not_found(msg)
+        } else {
+            ApiError::internal(e)
+        }
+    })?;
+    state.request_reload();
+    // Clone is always disabled — no conflict disables
+    Ok(Json(ConnectionMutationResult::new(&c, Vec::new())))
 }
 
 // ── Auth tokens ───────────────────────────────────────────────

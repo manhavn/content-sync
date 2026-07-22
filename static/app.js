@@ -628,17 +628,25 @@ function renderConnectionsPage() {
         <div class="btn-row">
           <button class="btn sm" data-toggle-conn="${c.id}">${esc(c.enabled ? t("off") : t("on"))}</button>
           <button class="btn sm" data-test-conn="${c.id}">${esc(t("test_migrate"))}</button>
+          <button class="btn sm" data-clone-conn="${c.id}">${esc(t("clone"))}</button>
           <button class="btn sm" data-edit-conn="${c.id}">${esc(t("edit"))}</button>
           <button class="btn sm danger" data-del-conn="${c.id}">${esc(t("delete"))}</button>
         </div>
       </td>
     </tr>`).join("") || `<tr><td colspan="8" class="muted">${esc(emptyMsg)}</td></tr>`;
 
+  function toastPipelineConflicts(r) {
+    const names = r && Array.isArray(r.disabled_conflicts) ? r.disabled_conflicts : [];
+    if (!names.length) return;
+    toast(t("conn_conflicts_off").replace("{names}", names.join(", ")));
+  }
+
   $$("#conn-body [data-toggle-conn]").forEach((b) => {
     b.onclick = async () => {
       try {
-        await api(`/api/connections/${b.dataset.toggleConn}/toggle`, { method: "POST" });
+        const r = await api(`/api/connections/${b.dataset.toggleConn}/toggle`, { method: "POST" });
         loadConnections();
+        toastPipelineConflicts(r);
       } catch (e) { toast(e.message, true); }
     };
   });
@@ -647,6 +655,15 @@ function renderConnectionsPage() {
       try {
         const r = await api(`/api/connections/${b.dataset.testConn}/test`, { method: "POST" });
         toast(r.message || "OK");
+        loadConnections();
+      } catch (e) { toast(e.message, true); }
+    };
+  });
+  $$("#conn-body [data-clone-conn]").forEach((b) => {
+    b.onclick = async () => {
+      try {
+        const r = await api(`/api/connections/${b.dataset.cloneConn}/clone`, { method: "POST" });
+        toast(t("conn_cloned").replace("{name}", r.name || "copy"));
         loadConnections();
       } catch (e) { toast(e.message, true); }
     };
@@ -717,14 +734,19 @@ function openConnModal(id, existing) {
     if (tableName) body.table_name = tableName;
     if (!body.name || !body.url) throw new Error(t("name_url_required"));
     const needsToken = body.driver === "sql_api" || body.driver === "libsql";
+    let res;
     if (id) {
       if (!body.access_token) delete body.access_token;
-      await api(`/api/connections/${id}`, { method: "PUT", body: JSON.stringify(body) });
+      res = await api(`/api/connections/${id}`, { method: "PUT", body: JSON.stringify(body) });
     } else {
       if (needsToken && !body.access_token) throw new Error(t("token_required"));
-      await api("/api/connections", { method: "POST", body: JSON.stringify(body) });
+      res = await api("/api/connections", { method: "POST", body: JSON.stringify(body) });
     }
     toast(t("saved_conn"));
+    const names = res && Array.isArray(res.disabled_conflicts) ? res.disabled_conflicts : [];
+    if (names.length) {
+      toast(t("conn_conflicts_off").replace("{names}", names.join(", ")));
+    }
     loadConnections();
   });
 }

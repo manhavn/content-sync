@@ -246,6 +246,52 @@ impl From<&Connection> for ConnectionView {
     }
 }
 
+/// Connection mutation response (create / update / toggle / clone).
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionMutationResult {
+    #[serde(flatten)]
+    pub connection: ConnectionView,
+    /// Names of other connections auto-disabled because they share the same pipeline.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub disabled_conflicts: Vec<String>,
+}
+
+impl ConnectionMutationResult {
+    pub fn new(c: &Connection, disabled_conflicts: Vec<String>) -> Self {
+        Self {
+            connection: ConnectionView::from(c),
+            disabled_conflicts,
+        }
+    }
+}
+
+/// Normalize watch_dir for pipeline conflict comparison (trim trailing separators).
+pub fn normalize_watch_dir_key(dir: &str) -> String {
+    let d = dir.trim().trim_end_matches(['/', '\\']);
+    if d.is_empty() {
+        "/".to_string()
+    } else {
+        d.to_string()
+    }
+}
+
+/// True when two connections target the same sync pipeline and cannot both be enabled.
+/// Conflict key: driver + table/collection + watch_dir + url.
+pub fn same_sync_pipeline(a: &Connection, b: &Connection) -> bool {
+    if a.driver != b.driver {
+        return false;
+    }
+    if a.table_name != b.table_name {
+        return false;
+    }
+    if normalize_watch_dir_key(&a.watch_dir) != normalize_watch_dir_key(&b.watch_dir) {
+        return false;
+    }
+    let ua = normalize_connection_url(&a.url, a.driver);
+    let ub = normalize_connection_url(&b.url, b.driver);
+    ua == ub
+}
+
 /// Normalize URL / DSN for the chosen driver.
 pub fn normalize_connection_url(url: &str, driver: ConnectionDriver) -> String {
     let u = url.trim().to_string();

@@ -97,15 +97,26 @@ content-sync serve
 | `content-sync background --bind 0.0.0.0:8787` | Background with custom bind |
 | `content-sync background --no-log` | Background with silent core logs (no `content-sync.log`) |
 | `content-sync quit` | Stop the background daemon |
-| `content-sync sync` | One-shot sync, then exit |
+| `content-sync sync` | One-shot sync, then exit (Dashboard “Sync now”) |
 | `content-sync status` | Show configuration (includes background PID status) |
+| `content-sync logs` | Recent sync logs (`--limit`, `--level`) |
+| `content-sync settings show` / `settings set …` | View / update settings |
 | `content-sync export` | Export system config to `export.content.sync.YYYY-MM-DD.HH-MM-SS.json` |
 | `content-sync export -o backup.json` | Export to a custom path |
 | `content-sync import <file>` | Import config (prompts; use `-y` to skip) |
-| `content-sync token create --name laptop` | Create Web UI login token |
-| `content-sync token show admin` | Print raw admin token |
-| `content-sync token list` / `delete` / `set` | Manage auth tokens |
-| `content-sync connection add/list/set/delete/test` | Manage DB connections |
+| `content-sync token create/show/list/set/delete` | Manage auth tokens |
+| `content-sync connection add/list/show/set/toggle/clone/test/delete` | Manage DB connections (name or id) |
+| `content-sync file list/show/write/delete` | Manage watched files (name or id for connection) |
+
+**Web UI ↔ CLI parity**
+
+| Web | CLI |
+|-----|-----|
+| Dashboard / Sync now / logs | `sync`, `logs`, `status` |
+| Files | `file list\|show\|write\|delete` |
+| Connections (add, on/off, test, clone, edit, delete) | `connection add\|toggle\|test\|clone\|set\|delete\|show\|list` |
+| Auth Tokens | `token create\|list\|set\|delete\|show` |
+| Settings + export/import | `settings show\|set`, `export`, `import` |
 
 Config export/import covers **settings, connections (with secrets), auth tokens** only.  
 **Not** included: sync logs, file cache, or file contents under watch dirs.

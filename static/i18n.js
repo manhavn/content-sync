@@ -61,7 +61,10 @@ const I18N = {
     // connections
     conn_title: "Database Connections",
     conn_add: "+ Connection",
-    conn_help: "Each connection = one DB + one table + one local watch directory. Enable only the pipelines you want to run.",
+    conn_help: "Each connection = one DB + one table + one local watch directory. Enable only the pipelines you want to run. Same driver+table+watch_dir+url cannot all be on — only one stays enabled.",
+    clone: "Clone",
+    conn_cloned: "Cloned as “{name}” (disabled, not connected). Edit then Test/migrate.",
+    conn_conflicts_off: "Pipeline conflict — disabled: {names}",
     th_name: "Name",
     th_driver: "Driver",
     th_table: "Table / coll.",
@@ -219,7 +222,10 @@ const I18N = {
 
     conn_title: "Database Connections",
     conn_add: "+ Connection",
-    conn_help: "Mỗi connection = một DB + một bảng + một thư mục local. Bật những pipeline cần sync.",
+    conn_help: "Mỗi connection = một DB + một bảng + một thư mục local. Bật những pipeline cần sync. Cùng driver+table+watch_dir+url không bật hết được — chỉ 1 cái on.",
+    clone: "Clone",
+    conn_cloned: "Đã clone thành “{name}” (tắt, chưa connect). Sửa config rồi Test/migrate.",
+    conn_conflicts_off: "Trùng pipeline — đã tắt: {names}",
     th_name: "Tên",
     th_driver: "Driver",
     th_table: "Bảng / coll.",

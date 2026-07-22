@@ -72,9 +72,27 @@ pub enum Commands {
     #[command(subcommand)]
     Token(TokenCmd),
 
-    /// Manage remote database connections
+    /// Manage remote database connections (add/list/show/set/toggle/clone/test/delete)
     #[command(subcommand)]
     Connection(ConnectionCmd),
+
+    /// Manage watched files (list/show/write/delete) — same as Web UI Files
+    #[command(subcommand)]
+    File(FileCmd),
+
+    /// View / update settings (poll, backoff, log retention, web bind)
+    #[command(subcommand)]
+    Settings(SettingsCmd),
+
+    /// Show recent sync logs (Dashboard log)
+    Logs {
+        /// Max rows (newest first)
+        #[arg(long, short, default_value_t = 50)]
+        limit: usize,
+        /// Filter by level (info|error)
+        #[arg(long)]
+        level: Option<String>,
+    },
 
     /// Show config paths and status
     Status,
@@ -151,13 +169,17 @@ pub enum ConnectionCmd {
         #[arg(long, default_value_t = true)]
         enabled: bool,
     },
+    /// List all connections
     List,
-    Delete {
-        id: String,
+    /// Show one connection (name or id)
+    Show {
+        /// Connection name or id
+        name_or_id: String,
     },
-    /// Enable or disable a connection
+    /// Update connection fields (name or id)
     Set {
-        id: String,
+        /// Connection name or id
+        name_or_id: String,
         #[arg(long)]
         enabled: Option<bool>,
         #[arg(long)]
@@ -176,10 +198,101 @@ pub enum ConnectionCmd {
         #[arg(long)]
         driver: Option<String>,
     },
-    /// Test connectivity and ensure/migrate remote table/collection schema
-    Test {
-        id: String,
+    /// Toggle enabled on/off (name or id) — same as Web UI On/Off
+    Toggle {
+        /// Connection name or id
+        name_or_id: String,
     },
+    /// Clone connection config (always off, status cleared) — same as Web UI Clone
+    Clone {
+        /// Source connection name or id
+        name_or_id: String,
+    },
+    /// Test connectivity and ensure/migrate remote schema — same as Web UI Test/migrate
+    Test {
+        /// Connection name or id
+        name_or_id: String,
+    },
+    /// Delete a connection (name or id)
+    Delete {
+        /// Connection name or id
+        name_or_id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum FileCmd {
+    /// List watched/cached files
+    List {
+        /// Filter by connection name or id
+        #[arg(long, short = 'c')]
+        connection: Option<String>,
+    },
+    /// Show file content (connection name/id + file name)
+    Show {
+        /// Connection name or id
+        connection: String,
+        /// File basename under watch_dir
+        name: String,
+    },
+    /// Create or update a file (write local + push if connection enabled)
+    Write {
+        /// Connection name or id
+        connection: String,
+        /// File basename under watch_dir
+        name: String,
+        /// Inline content (mutually exclusive with --file)
+        #[arg(long)]
+        content: Option<String>,
+        /// Read content from a local path (use - for stdin)
+        #[arg(long, short = 'f')]
+        file: Option<String>,
+    },
+    /// Delete a file (local + remote when possible)
+    Delete {
+        /// Connection name or id
+        connection: String,
+        /// File basename under watch_dir
+        name: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SettingsCmd {
+    /// Print current settings
+    Show,
+    /// Update settings (only flags you pass are changed)
+    Set {
+        #[arg(long)]
+        poll_interval_secs: Option<u64>,
+        #[arg(long)]
+        error_backoff_secs: Option<u64>,
+        #[arg(long)]
+        error_backoff_max_secs: Option<u64>,
+        #[arg(long)]
+        log_retention_hours: Option<u64>,
+        #[arg(long)]
+        web_bind: Option<String>,
+    },
+}
+
+fn resolve_connection(db: &ConfigDb, name_or_id: &str) -> anyhow::Result<Connection> {
+    db.find_connection(name_or_id)?
+        .ok_or_else(|| anyhow::anyhow!("connection not found: {name_or_id}"))
+}
+
+fn print_connection(c: &Connection) {
+    println!("id         : {}", c.id);
+    println!("name       : {}", c.name);
+    println!("driver     : {}", c.driver);
+    println!("url        : {}", c.url);
+    println!("table      : {}", c.table_name);
+    println!("watch_dir  : {}", c.watch_dir);
+    println!("enabled    : {}", c.enabled);
+    println!("last_sync  : {}", c.last_sync_at.as_deref().unwrap_or("—"));
+    println!("last_error : {}", c.last_error.as_deref().unwrap_or("—"));
+    println!("created_at : {}", c.created_at);
+    println!("updated_at : {}", c.updated_at);
 }
 
 pub async fn run(cli: Cli) -> anyhow::Result<()> {
@@ -406,7 +519,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 if driver.requires_secret() && access_token.trim().is_empty() {
                     anyhow::bail!("--access-token is required for sql_api and libsql drivers");
                 }
-                let c = db.create_connection(
+                let (c, disabled) = db.create_connection(
                     &name,
                     &url,
                     &access_token,
@@ -416,12 +529,13 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                     enabled,
                 )?;
                 println!("Created connection {}", c.id);
-                println!("  name     : {}", c.name);
-                println!("  driver   : {}", c.driver);
-                println!("  url      : {}", c.url);
-                println!("  table    : {}", c.table_name);
-                println!("  watch_dir: {}", c.watch_dir);
-                println!("  on       : {}", c.enabled);
+                print_connection(&c);
+                if !disabled.is_empty() {
+                    println!(
+                        "note: disabled conflicting pipelines: {}",
+                        disabled.join(", ")
+                    );
+                }
                 Ok(())
             }
             ConnectionCmd::List => {
@@ -439,13 +553,13 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
                 Ok(())
             }
-            ConnectionCmd::Delete { id } => {
-                db.delete_connection(&id)?;
-                println!("Deleted {id}");
+            ConnectionCmd::Show { name_or_id } => {
+                let c = resolve_connection(&db, &name_or_id)?;
+                print_connection(&c);
                 Ok(())
             }
             ConnectionCmd::Set {
-                id,
+                name_or_id,
                 enabled,
                 name,
                 url,
@@ -454,9 +568,10 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 watch_dir,
                 driver,
             } => {
+                let c0 = resolve_connection(&db, &name_or_id)?;
                 let driver = driver.as_deref().map(ConnectionDriver::parse).transpose()?;
-                let c = db.update_connection(
-                    &id,
+                let (c, disabled) = db.update_connection(
+                    &c0.id,
                     name.as_deref(),
                     url.as_deref(),
                     access_token.as_deref(),
@@ -465,22 +580,52 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                     driver,
                     enabled,
                 )?;
-                println!(
-                    "Updated {} enabled={} driver={} table={} dir={}",
-                    c.id, c.enabled, c.driver, c.table_name, c.watch_dir
-                );
+                println!("Updated {}", c.id);
+                print_connection(&c);
+                if !disabled.is_empty() {
+                    println!("Disabled conflicting pipelines: {}", disabled.join(", "));
+                }
                 Ok(())
             }
-            ConnectionCmd::Test { id } => {
-                let c = db
-                    .get_connection(&id)?
-                    .ok_or_else(|| anyhow::anyhow!("connection not found"))?;
+            ConnectionCmd::Toggle { name_or_id } => {
+                let c0 = resolve_connection(&db, &name_or_id)?;
+                let (c, disabled) = db.update_connection(
+                    &c0.id,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    Some(!c0.enabled),
+                )?;
+                println!(
+                    "Toggled {} → {}",
+                    c.name,
+                    if c.enabled { "ON" } else { "OFF" }
+                );
+                if !disabled.is_empty() {
+                    println!("Disabled conflicting pipelines: {}", disabled.join(", "));
+                }
+                Ok(())
+            }
+            ConnectionCmd::Clone { name_or_id } => {
+                let src = resolve_connection(&db, &name_or_id)?;
+                let c = db.clone_connection(&src.id)?;
+                println!("Cloned connection → {}", c.id);
+                print_connection(&c);
+                println!("note: always OFF after clone; status not connected");
+                println!("Edit config, then: content-sync connection test {}", c.name);
+                Ok(())
+            }
+            ConnectionCmd::Test { name_or_id } => {
+                let c = resolve_connection(&db, &name_or_id)?;
                 println!(
                     "Testing {} driver={} table=`{}` dir={} …",
                     c.name, c.driver, c.table_name, c.watch_dir
                 );
                 let report = remote::test_connection(&c).await?;
-                db.set_connection_status(&id, None, Some(&now_rfc3339()))?;
+                db.set_connection_status(&c.id, None, Some(&now_rfc3339()))?;
                 println!("OK — table `{}` via {}", report.table, c.driver);
                 println!("  columns: {}", report.columns.join(", "));
                 if !report.added_columns.is_empty() {
@@ -488,7 +633,198 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
                 Ok(())
             }
+            ConnectionCmd::Delete { name_or_id } => {
+                let c = resolve_connection(&db, &name_or_id)?;
+                db.delete_connection(&c.id)?;
+                println!("Deleted {} ({})", c.name, c.id);
+                Ok(())
+            }
         },
+
+        Commands::File(cmd) => match cmd {
+            FileCmd::List { connection } => {
+                let _ = db.purge_orphan_file_cache();
+                let conns = db.list_connections()?;
+                let conn_names: std::collections::HashMap<_, _> = conns
+                    .iter()
+                    .map(|c| (c.id.clone(), c.name.clone()))
+                    .collect();
+                let filter_id = if let Some(ref key) = connection {
+                    Some(resolve_connection(&db, key)?.id)
+                } else {
+                    None
+                };
+                let mut rows = db.list_file_cache()?;
+                if let Some(ref cid) = filter_id {
+                    rows.retain(|r| r.connection_id.as_deref() == Some(cid.as_str()));
+                }
+                for r in rows {
+                    let cid = r.connection_id.clone().unwrap_or_default();
+                    let cname = conn_names.get(&cid).map(|s| s.as_str()).unwrap_or("—");
+                    println!(
+                        "{:24}  conn={cname} ({cid})  size={}  updated={}  path={}",
+                        r.file_name,
+                        r.content.len(),
+                        r.updated_at,
+                        if r.file_path.is_empty() {
+                            "—"
+                        } else {
+                            r.file_path.as_str()
+                        }
+                    );
+                }
+                Ok(())
+            }
+            FileCmd::Show { connection, name } => {
+                let c = resolve_connection(&db, &connection)?;
+                let rec = db.list_file_cache()?.into_iter().find(|r| {
+                    r.file_name == name && r.connection_id.as_deref() == Some(c.id.as_str())
+                });
+                // Prefer on-disk content when available
+                let path = std::path::PathBuf::from(&c.watch_dir).join(&name);
+                if path.is_file() {
+                    let body = std::fs::read_to_string(&path)?;
+                    println!("connection : {} ({})", c.name, c.id);
+                    println!("file       : {name}");
+                    println!("path       : {}", path.display());
+                    println!("size       : {}", body.len());
+                    println!("---");
+                    print!("{body}");
+                    if !body.ends_with('\n') {
+                        println!();
+                    }
+                } else if let Some(r) = rec {
+                    println!("connection : {} ({})", c.name, c.id);
+                    println!("file       : {}", r.file_name);
+                    println!("path       : {}", r.file_path);
+                    println!("size       : {}", r.content.len());
+                    println!("updated    : {}", r.updated_at);
+                    println!("---");
+                    print!("{}", r.content);
+                    if !r.content.ends_with('\n') {
+                        println!();
+                    }
+                } else {
+                    anyhow::bail!("file not found: {name} on connection {}", c.name);
+                }
+                Ok(())
+            }
+            FileCmd::Write {
+                connection,
+                name,
+                content,
+                file,
+            } => {
+                let c = resolve_connection(&db, &connection)?;
+                let body = match (content, file) {
+                    (Some(s), None) => s,
+                    (None, Some(path)) if path == "-" => {
+                        use std::io::Read;
+                        let mut buf = String::new();
+                        std::io::stdin().read_to_string(&mut buf)?;
+                        buf
+                    }
+                    (None, Some(path)) => std::fs::read_to_string(&path)
+                        .map_err(|e| anyhow::anyhow!("read {path}: {e}"))?,
+                    (None, None) => {
+                        anyhow::bail!(
+                            "provide --content '…' or --file <path> (or --file - for stdin)"
+                        )
+                    }
+                    (Some(_), Some(_)) => {
+                        anyhow::bail!("use either --content or --file, not both")
+                    }
+                };
+                let state = AppState::new(db);
+                let path = sync::write_and_push(&state, &c.id, &name, &body).await?;
+                println!("Wrote {} ({} bytes) → {}", name, body.len(), path.display());
+                println!("connection: {} ({})", c.name, c.id);
+                Ok(())
+            }
+            FileCmd::Delete { connection, name } => {
+                let c = resolve_connection(&db, &connection)?;
+                let state = AppState::new(db);
+                sync::delete_local_and_remote(&state, &c.id, &name).await?;
+                println!("Deleted {name} on connection {} ({})", c.name, c.id);
+                Ok(())
+            }
+        },
+
+        Commands::Settings(cmd) => match cmd {
+            SettingsCmd::Show => {
+                let s = db.get_settings()?;
+                println!("poll_interval_secs      : {}", s.poll_interval_secs);
+                println!("error_backoff_secs      : {}", s.error_backoff_secs);
+                println!("error_backoff_max_secs  : {}", s.error_backoff_max_secs);
+                println!("log_retention_hours     : {}", s.log_retention_hours);
+                println!("web_bind                : {}", s.web_bind);
+                println!("default_files_root      : {}", s.default_files_root);
+                println!("watch_dir (legacy)      : {}", s.watch_dir);
+                Ok(())
+            }
+            SettingsCmd::Set {
+                poll_interval_secs,
+                error_backoff_secs,
+                error_backoff_max_secs,
+                log_retention_hours,
+                web_bind,
+            } => {
+                if poll_interval_secs.is_none()
+                    && error_backoff_secs.is_none()
+                    && error_backoff_max_secs.is_none()
+                    && log_retention_hours.is_none()
+                    && web_bind.is_none()
+                {
+                    anyhow::bail!(
+                        "pass at least one of --poll-interval-secs --error-backoff-secs --error-backoff-max-secs --log-retention-hours --web-bind"
+                    );
+                }
+                let mut s = db.get_settings()?;
+                if let Some(v) = poll_interval_secs {
+                    s.poll_interval_secs = v;
+                }
+                if let Some(v) = error_backoff_secs {
+                    s.error_backoff_secs = v;
+                }
+                if let Some(v) = error_backoff_max_secs {
+                    s.error_backoff_max_secs = v;
+                }
+                if let Some(v) = log_retention_hours {
+                    s.log_retention_hours = v;
+                }
+                if let Some(v) = web_bind {
+                    s.web_bind = v;
+                }
+                db.save_settings(&s)?;
+                println!("Settings saved (web_bind needs serve restart if changed).");
+                println!("poll_interval_secs      : {}", s.poll_interval_secs);
+                println!("error_backoff_secs      : {}", s.error_backoff_secs);
+                println!("error_backoff_max_secs  : {}", s.error_backoff_max_secs);
+                println!("log_retention_hours     : {}", s.log_retention_hours);
+                println!("web_bind                : {}", s.web_bind);
+                Ok(())
+            }
+        },
+
+        Commands::Logs { limit, level } => {
+            let logs = db.list_sync_log(limit.max(1))?;
+            let level_f = level
+                .as_deref()
+                .map(|s| s.trim().to_ascii_lowercase())
+                .filter(|s| !s.is_empty());
+            for row in logs {
+                let lvl = row.get("level").and_then(|v| v.as_str()).unwrap_or("");
+                if let Some(ref want) = level_f {
+                    if lvl.to_ascii_lowercase() != *want {
+                        continue;
+                    }
+                }
+                let ts = row.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
+                let msg = row.get("message").and_then(|v| v.as_str()).unwrap_or("");
+                println!("{ts}  {lvl:5}  {msg}");
+            }
+            Ok(())
+        }
 
         Commands::Sync => {
             let state = AppState::new(db);

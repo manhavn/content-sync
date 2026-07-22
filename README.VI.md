@@ -97,15 +97,26 @@ content-sync serve
 | `content-sync background --bind 0.0.0.0:8787` | Chạy nền với bind tùy chỉnh |
 | `content-sync background --no-log` | Chạy nền, tắt log core (không ghi `content-sync.log`) |
 | `content-sync quit` | Dừng process background |
-| `content-sync sync` | Đồng bộ 1 lần rồi thoát |
+| `content-sync sync` | Đồng bộ 1 lần rồi thoát (Dashboard “Sync now”) |
 | `content-sync status` | Xem cấu hình (kèm trạng thái background) |
+| `content-sync logs` | Sync logs gần đây (`--limit`, `--level`) |
+| `content-sync settings show` / `settings set …` | Xem / cập nhật settings |
 | `content-sync export` | Export cấu hình hệ thống ra `export.content.sync.YYYY-MM-DD.HH-MM-SS.json` |
 | `content-sync export -o backup.json` | Export ra đường dẫn tùy chọn |
 | `content-sync import <file>` | Import cấu hình (có hỏi xác nhận; dùng `-y` để bỏ qua) |
-| `content-sync token create --name laptop` | Tạo token login Web UI |
-| `content-sync token show admin` | In raw token |
-| `content-sync token list` / `delete` / `set` | Quản lý auth tokens |
-| `content-sync connection add/list/set/delete/test` | Quản lý DB connections |
+| `content-sync token create/show/list/set/delete` | Quản lý auth tokens |
+| `content-sync connection add/list/show/set/toggle/clone/test/delete` | Quản lý DB connections (name hoặc id) |
+| `content-sync file list/show/write/delete` | Quản lý file watch (connection theo name hoặc id) |
+
+**Web UI ↔ CLI (đủ bộ)**
+
+| Web | CLI |
+|-----|-----|
+| Dashboard / Sync now / logs | `sync`, `logs`, `status` |
+| Files | `file list\|show\|write\|delete` |
+| Connections (add, on/off, test, clone, edit, delete) | `connection add\|toggle\|test\|clone\|set\|delete\|show\|list` |
+| Auth Tokens | `token create\|list\|set\|delete\|show` |
+| Settings + export/import | `settings show\|set`, `export`, `import` |
 
 Export/import chỉ gồm **settings, connections (kèm secret), auth tokens**.  
 **Không** gồm: sync logs, file cache, hay nội dung file trong watch dir.

@@ -126,6 +126,16 @@ const I18N = {
     save_settings: "Save settings",
     settings_saved_msg: "Saved. Watcher will reload; web_bind needs a CLI restart.",
     settings_saved: "Settings saved",
+    config_io_title: "Export / Import config",
+    config_io_hint:
+      "Download or restore system configuration (settings, connections with secrets, auth tokens). Sync logs and file contents are not included.",
+    config_export: "Export config",
+    config_import: "Import config",
+    config_export_ok: "Config exported",
+    config_import_confirm:
+      "Import will replace settings, connections, and auth tokens. Sync logs and file contents stay as-is. Sessions are cleared — you may need to sign in again. Continue?",
+    config_import_ok: "Config imported ({connections} connections, {tokens} auth tokens)",
+    config_import_invalid: "Invalid config file",
 
     // modal
     cancel: "Cancel",
@@ -272,6 +282,16 @@ const I18N = {
     save_settings: "Lưu settings",
     settings_saved_msg: "Đã lưu. Watcher sẽ reload; web_bind cần restart CLI.",
     settings_saved: "Đã lưu settings",
+    config_io_title: "Export / Import cấu hình",
+    config_io_hint:
+      "Tải xuống hoặc khôi phục cấu hình hệ thống (settings, connections kèm secret, auth tokens). Sync logs và nội dung file không được export/import.",
+    config_export: "Export cấu hình",
+    config_import: "Import cấu hình",
+    config_export_ok: "Đã export cấu hình",
+    config_import_confirm:
+      "Import sẽ thay thế settings, connections và auth tokens. Sync logs và nội dung file giữ nguyên. Session bị xoá — có thể cần đăng nhập lại. Tiếp tục?",
+    config_import_ok: "Đã import cấu hình ({connections} connections, {tokens} auth tokens)",
+    config_import_invalid: "File cấu hình không hợp lệ",
 
     cancel: "Huỷ",
     save: "Lưu",

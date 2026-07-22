@@ -81,6 +81,24 @@ pub enum Commands {
 
     /// Print config directory path
     ConfigPath,
+
+    /// Export system configuration to JSON (settings, connections, auth tokens).
+    /// Does not include sync logs, file cache, or file contents on disk.
+    Export {
+        /// Output file path (default: export.content.sync.YYYY-MM-DD.HH-MM-SS.json in cwd)
+        #[arg(long, short)]
+        output: Option<String>,
+    },
+
+    /// Import system configuration from a JSON export file.
+    /// Replaces settings, connections, and auth tokens. Sync logs and file contents are not imported.
+    Import {
+        /// Path to export JSON file (e.g. export.content.sync.2026-07-22.08-57-30.json)
+        path: String,
+        /// Skip interactive confirmation
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -208,6 +226,69 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
 
         Commands::ConfigPath => {
             println!("{}", config::config_dir().display());
+            Ok(())
+        }
+
+        Commands::Export { output } => {
+            let data = db.export_config()?;
+            let path = match output {
+                Some(p) => std::path::PathBuf::from(p),
+                None => std::path::PathBuf::from(config_export_filename(chrono::Utc::now())),
+            };
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent)?;
+                }
+            }
+            let json = serde_json::to_string_pretty(&data)?;
+            std::fs::write(&path, json.as_bytes())?;
+            println!("Exported system config → {}", path.display());
+            println!("  settings     : yes");
+            println!("  connections  : {}", data.connections.len());
+            println!("  auth tokens  : {}", data.auth_tokens.len());
+            println!("  sync logs    : not exported");
+            println!("  file data    : not exported (cache + disk contents)");
+            Ok(())
+        }
+
+        Commands::Import { path, yes } => {
+            let path = std::path::PathBuf::from(&path);
+            if !path.is_file() {
+                anyhow::bail!("file not found: {}", path.display());
+            }
+            let text = std::fs::read_to_string(&path)?;
+            let data: ConfigExport = serde_json::from_str(&text)
+                .map_err(|e| anyhow::anyhow!("invalid config export JSON: {e}"))?;
+
+            if !yes {
+                eprintln!("Import will REPLACE:");
+                eprintln!(
+                    "  settings, connections ({}), auth tokens ({})",
+                    data.connections.len(),
+                    data.auth_tokens.len()
+                );
+                eprintln!("Will NOT change:");
+                eprintln!("  sync logs, file contents on disk");
+                eprintln!("Sessions will be cleared (Web UI re-login may be required).");
+                eprint!("Continue? [y/N] ");
+                use std::io::Write;
+                std::io::stderr().flush()?;
+                let mut line = String::new();
+                std::io::stdin().read_line(&mut line)?;
+                let ans = line.trim().to_ascii_lowercase();
+                if ans != "y" && ans != "yes" {
+                    println!("Aborted.");
+                    return Ok(());
+                }
+            }
+
+            db.import_config(&data)?;
+            println!("Imported system config ← {}", path.display());
+            println!("  settings     : replaced");
+            println!("  connections  : {}", data.connections.len());
+            println!("  auth tokens  : {}", data.auth_tokens.len());
+            println!("  sync logs    : unchanged");
+            println!("  file data    : not imported");
             Ok(())
         }
 

@@ -211,6 +211,164 @@ impl ConfigDb {
         Ok(())
     }
 
+    // ── Config export / import ────────────────────────────────
+    // Includes: settings, connections (secrets), auth tokens.
+    // Excludes: sync_log, file_cache, and any file body/content on disk.
+
+    /// Snapshot system configuration only (no logs, no file data).
+    pub fn export_config(&self) -> Result<ConfigExport> {
+        let settings = self.get_settings()?;
+        let connections = self.list_connections()?;
+        let auth_tokens = self
+            .list_auth_tokens()?
+            .iter()
+            .map(AuthTokenExport::from)
+            .collect();
+        Ok(ConfigExport {
+            version: 1,
+            exported_at: now_rfc3339(),
+            settings,
+            connections,
+            auth_tokens,
+        })
+    }
+
+    /// Replace settings, connections, and auth tokens from an export.
+    /// Sync logs and file contents on disk are left untouched.
+    /// Sessions are cleared (Web UI re-login may be required).
+    /// Orphan file_cache rows (not file bodies) are purged after connection replace.
+    pub fn import_config(&self, data: &ConfigExport) -> Result<()> {
+        if data.version == 0 || data.version > 1 {
+            return Err(anyhow!(
+                "unsupported config export version {} (supported: 1)",
+                data.version
+            ));
+        }
+
+        // Validate table names / drivers before mutating
+        for c in &data.connections {
+            validate_table_name(&c.table_name)?;
+            if c.id.trim().is_empty() || c.name.trim().is_empty() || c.url.trim().is_empty() {
+                return Err(anyhow!("connection id, name, and url are required"));
+            }
+        }
+        for t in &data.auth_tokens {
+            if t.id.trim().is_empty() || t.name.trim().is_empty() {
+                return Err(anyhow!("auth token id and name are required"));
+            }
+            if t.token_hash.trim().is_empty()
+                && t.raw_token
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .unwrap_or("")
+                    .is_empty()
+            {
+                return Err(anyhow!(
+                    "auth token `{}` needs token_hash or raw_token to restore login",
+                    t.name
+                ));
+            }
+        }
+
+        // Ensure watch dirs exist before committing DB state
+        for c in &data.connections {
+            let dir = if c.watch_dir.trim().is_empty() {
+                default_watch_dir_for(&c.name)
+            } else {
+                c.watch_dir.clone()
+            };
+            std::fs::create_dir_all(&dir).with_context(|| format!("create watch_dir {dir}"))?;
+        }
+
+        {
+            let conn = self.conn.lock();
+            let tx = conn.unchecked_transaction()?;
+
+            // Do NOT touch sync_log
+            tx.execute("DELETE FROM sessions", [])?;
+            tx.execute("DELETE FROM auth_tokens", [])?;
+            tx.execute("DELETE FROM file_cache WHERE connection_id != 'local'", [])?;
+            tx.execute("DELETE FROM connections", [])?;
+
+            for t in &data.auth_tokens {
+                let (hash, prefix, raw) = if let Some(raw) = t
+                    .raw_token
+                    .as_ref()
+                    .map(|s| s.trim())
+                    .filter(|s| !s.is_empty())
+                {
+                    let hash = hash_token(raw);
+                    let prefix: String = raw.chars().take(12).collect();
+                    (hash, prefix, Some(raw.to_string()))
+                } else {
+                    (
+                        t.token_hash.clone(),
+                        t.token_prefix.clone(),
+                        t.raw_token.clone(),
+                    )
+                };
+                tx.execute(
+                    "INSERT INTO auth_tokens(id, name, token_hash, token_prefix, enabled, created_at, last_used_at, raw_token)
+                     VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+                    params![
+                        t.id,
+                        t.name,
+                        hash,
+                        prefix,
+                        if t.enabled { 1i32 } else { 0 },
+                        t.created_at,
+                        t.last_used_at,
+                        raw,
+                    ],
+                )?;
+            }
+
+            for c in &data.connections {
+                let table_name = validate_table_name(&c.table_name)?;
+                let watch_dir = if c.watch_dir.trim().is_empty() {
+                    default_watch_dir_for(&c.name)
+                } else {
+                    c.watch_dir.clone()
+                };
+                let url = normalize_connection_url(&c.url, c.driver);
+                let created = if c.created_at.trim().is_empty() {
+                    now_rfc3339()
+                } else {
+                    c.created_at.clone()
+                };
+                let updated = if c.updated_at.trim().is_empty() {
+                    created.clone()
+                } else {
+                    c.updated_at.clone()
+                };
+                tx.execute(
+                    "INSERT INTO connections(id, name, url, access_token, enabled, created_at, updated_at, last_error, last_sync_at, table_name, driver, watch_dir)
+                     VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12)",
+                    params![
+                        c.id,
+                        c.name,
+                        url,
+                        c.access_token,
+                        if c.enabled { 1i32 } else { 0 },
+                        created,
+                        updated,
+                        c.last_error,
+                        c.last_sync_at,
+                        table_name,
+                        c.driver.as_str(),
+                        watch_dir,
+                    ],
+                )?;
+            }
+
+            tx.commit()?;
+        }
+
+        // Settings use key/value rows (own lock) — after transaction
+        self.save_settings(&data.settings)?;
+        Ok(())
+    }
+
     // ── Auth tokens (Web UI login) ────────────────────────────
 
     fn map_auth_token(r: &rusqlite::Row<'_>) -> rusqlite::Result<AuthToken> {

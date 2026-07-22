@@ -222,19 +222,33 @@
         <!-- Settings -->
         <div id="tab-settings" class="tab hidden">
           <header class="page-head"><h2 data-i18n="settings_title">Settings</h2></header>
-          <div class="card form-card">
-            <label data-i18n="label_poll">Poll interval (seconds) — periodic pull when healthy</label>
-            <input id="set-poll" type="number" min="5" />
-            <label data-i18n="label_backoff">Error backoff base (seconds)</label>
-            <input id="set-error-backoff" type="number" min="30" />
-            <label data-i18n="label_backoff_max">Error backoff max (seconds)</label>
-            <input id="set-error-backoff-max" type="number" min="60" />
-            <label data-i18n="label_log_retention">Log retention (hours)</label>
-            <input id="set-log-retention" type="number" min="0" placeholder="48" />
-            <label data-i18n="label_web_bind">Web bind (restart CLI to apply)</label>
-            <input id="set-bind" type="text" />
-            <button id="btn-save-settings" class="btn primary" data-i18n="save_settings">Save settings</button>
-            <p id="settings-msg" class="muted"></p>
+          <div class="settings-stack">
+            <div class="card form-card">
+              <label data-i18n="label_poll">Poll interval (seconds) — periodic pull when healthy</label>
+              <input id="set-poll" type="number" min="5" />
+              <label data-i18n="label_backoff">Error backoff base (seconds)</label>
+              <input id="set-error-backoff" type="number" min="30" />
+              <label data-i18n="label_backoff_max">Error backoff max (seconds)</label>
+              <input id="set-error-backoff-max" type="number" min="60" />
+              <label data-i18n="label_log_retention">Log retention (hours)</label>
+              <input id="set-log-retention" type="number" min="0" placeholder="48" />
+              <label data-i18n="label_web_bind">Web bind (restart CLI to apply)</label>
+              <input id="set-bind" type="text" />
+              <button id="btn-save-settings" class="btn primary" data-i18n="save_settings">Save settings</button>
+              <p id="settings-msg" class="muted"></p>
+            </div>
+            <div class="card form-card">
+              <h3 class="card-title" data-i18n="config_io_title">Export / Import config</h3>
+              <p class="muted small" data-i18n="config_io_hint">
+                Download or restore system configuration (settings, connections with secrets, auth tokens). Sync logs and file contents are not included.
+              </p>
+              <div class="btn-row">
+                <button type="button" id="btn-export-config" class="btn primary" data-i18n="config_export">Export config</button>
+                <button type="button" id="btn-import-config" class="btn" data-i18n="config_import">Import config</button>
+                <input type="file" id="import-config-file" accept="application/json,.json" class="hidden" />
+              </div>
+              <p id="config-io-msg" class="muted"></p>
+            </div>
           </div>
         </div>
       </main>

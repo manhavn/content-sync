@@ -99,10 +99,16 @@ content-sync serve
 | `content-sync quit` | Stop the background daemon |
 | `content-sync sync` | One-shot sync, then exit |
 | `content-sync status` | Show configuration (includes background PID status) |
+| `content-sync export` | Export system config to `export.content.sync.YYYY-MM-DD.HH-MM-SS.json` |
+| `content-sync export -o backup.json` | Export to a custom path |
+| `content-sync import <file>` | Import config (prompts; use `-y` to skip) |
 | `content-sync token create --name laptop` | Create Web UI login token |
 | `content-sync token show admin` | Print raw admin token |
 | `content-sync token list` / `delete` / `set` | Manage auth tokens |
 | `content-sync connection add/list/set/delete/test` | Manage DB connections |
+
+Config export/import covers **settings, connections (with secrets), auth tokens** only.  
+**Not** included: sync logs, file cache, or file contents under watch dirs.
 
 ### Drivers
 
@@ -133,7 +139,7 @@ Remote schema (every SQL driver / Mongo document): `id`, `file_name` (unique), `
 2. **Files** — CRUD raw text files → write local + push remote  
 3. **Connections** — CRUD URL/token; driver; enable/disable; Test/migrate  
 4. **Auth Tokens** — UI login tokens  
-5. **Settings** — watch dir, poll, backoff, log retention  
+5. **Settings** — poll, backoff, log retention, **export/import config**  
 
 Language: EN (default) / VI toggle (localStorage).
 
@@ -144,3 +150,4 @@ Language: EN (default) / VI toggle (localStorage).
 - `GET/POST /api/files` · `PUT/DELETE /api/files/:name` (`{ "file_name", "content" }`)
 - `GET/POST /api/connections` · `PUT/DELETE /api/connections/:id`
 - `GET/PUT /api/settings`
+- `GET  /api/config/export` · `POST /api/config/import` (config only; no logs/files)

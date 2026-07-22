@@ -837,6 +837,93 @@ $("#btn-save-settings").onclick = async () => {
   } catch (e) { toast(e.message, true); }
 };
 
+/** Filename: export.content.sync.YYYY-MM-DD.HH-MM-SS.json (no spaces; specials → -) */
+function configExportFilename(d = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const time = `${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+  return `export.content.sync.${date}.${time}.json`;
+}
+
+function downloadJsonBlob(obj, filename) {
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+$("#btn-export-config").onclick = async () => {
+  const msg = $("#config-io-msg");
+  try {
+    const data = await api("/api/config/export");
+    const name = configExportFilename();
+    downloadJsonBlob(data, name);
+    if (msg) msg.textContent = `${t("config_export_ok")}: ${name}`;
+    toast(t("config_export_ok"));
+  } catch (e) {
+    if (msg) msg.textContent = e.message;
+    toast(e.message, true);
+  }
+};
+
+$("#btn-import-config").onclick = () => {
+  const input = $("#import-config-file");
+  if (input) {
+    input.value = "";
+    input.click();
+  }
+};
+
+$("#import-config-file").onchange = async (ev) => {
+  const file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  const msg = $("#config-io-msg");
+  try {
+    const text = await file.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(t("config_import_invalid"));
+    }
+    if (!data || typeof data !== "object" || !data.settings) {
+      throw new Error(t("config_import_invalid"));
+    }
+    if (!confirm(t("config_import_confirm"))) return;
+    const res = await api("/api/config/import", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+    const okMsg = t("config_import_ok")
+      .replace("{connections}", String(res.connections ?? data.connections?.length ?? 0))
+      .replace("{tokens}", String(res.auth_tokens ?? data.auth_tokens?.length ?? 0));
+    if (msg) msg.textContent = okMsg;
+    toast(okMsg);
+    try {
+      await loadSettings();
+    } catch {
+      // session may have been cleared — fall through to re-auth check
+    }
+    try {
+      await api("/api/me");
+    } catch {
+      state.sessionId = "";
+      localStorage.removeItem("sa_session");
+      showLogin();
+    }
+  } catch (e) {
+    if (msg) msg.textContent = e.message;
+    toast(e.message, true);
+  } finally {
+    ev.target.value = "";
+  }
+};
+
 // ── Modal helpers ─────────────────────────────────────────────
 let modalSaveFn = null;
 

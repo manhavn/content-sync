@@ -139,6 +139,10 @@ code { font-family: var(--mono); font-size: 0.9em; background: var(--bg3); paddi
   box-shadow: 0 20px 50px rgba(0,0,0,0.35);
 }
 .form-card { max-width: 640px; display: flex; flex-direction: column; gap: 10px; }
+.settings-stack { display: flex; flex-direction: column; gap: 16px; max-width: 640px; }
+.settings-stack .form-card { max-width: none; }
+.card-title { margin: 0 0 4px; font-size: 1rem; font-weight: 600; }
+.muted.small { font-size: 12px; line-height: 1.45; }
 label { font-size: 13px; color: var(--muted); margin-top: 6px; }
 input, textarea, select {
   width: 100%; background: var(--bg); border: 1px solid var(--border);

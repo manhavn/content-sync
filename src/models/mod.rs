@@ -440,5 +440,66 @@ impl Default for Settings {
     }
 }
 
+/// Portable backup of system configuration (settings, connections, auth tokens).
+///
+/// Intentionally excluded (not system config):
+/// - sync logs
+/// - file cache (`file_cache` table)
+/// - raw file contents under watch directories
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigExport {
+    /// Format version for forward compatibility
+    #[serde(default = "default_config_export_version")]
+    pub version: u32,
+    pub exported_at: String,
+    pub settings: Settings,
+    #[serde(default)]
+    pub connections: Vec<Connection>,
+    #[serde(default)]
+    pub auth_tokens: Vec<AuthTokenExport>,
+}
+
+fn default_config_export_version() -> u32 {
+    1
+}
+
+/// Auth token fields needed to restore Web UI login after import.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthTokenExport {
+    pub id: String,
+    pub name: String,
+    pub token_hash: String,
+    pub token_prefix: String,
+    /// Full raw token when available (required to log in after restore)
+    #[serde(default)]
+    pub raw_token: Option<String>,
+    pub enabled: bool,
+    pub created_at: String,
+    #[serde(default)]
+    pub last_used_at: Option<String>,
+}
+
+impl From<&AuthToken> for AuthTokenExport {
+    fn from(t: &AuthToken) -> Self {
+        Self {
+            id: t.id.clone(),
+            name: t.name.clone(),
+            token_hash: t.token_hash.clone(),
+            token_prefix: t.token_prefix.clone(),
+            raw_token: t.raw_token.clone(),
+            enabled: t.enabled,
+            created_at: t.created_at.clone(),
+            last_used_at: t.last_used_at.clone(),
+        }
+    }
+}
+
+/// Build download filename: `export.content.sync.YYYY-MM-DD.HH-MM-SS.json`
+/// Special characters become `-`; date and time blocks separated by `.`; no spaces.
+pub fn config_export_filename(at: DateTime<Utc>) -> String {
+    let stamp = at.format("%Y-%m-%d.%H-%M-%S").to_string();
+    format!("export.content.sync.{stamp}.json")
+}
+
 #[allow(dead_code)]
 pub type Timestamp = DateTime<Utc>;

@@ -24,6 +24,9 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/sync/log", get(sync_log))
         // Settings
         .route("/api/settings", get(get_settings).put(put_settings))
+        // Config export / import (settings + connections + auth tokens; no sync logs)
+        .route("/api/config/export", get(export_config))
+        .route("/api/config/import", post(import_config))
         // Connections
         .route(
             "/api/connections",
@@ -275,6 +278,53 @@ async fn put_settings(
     state.db.save_settings(&s).map_err(ApiError::internal)?;
     state.request_reload();
     Ok(Json(s))
+}
+
+// ── Config export / import ────────────────────────────────────
+
+async fn export_config(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    require_auth(&state, &headers).await?;
+    let data = state.db.export_config().map_err(ApiError::internal)?;
+    let filename = config_export_filename(chrono::Utc::now());
+    let body = serde_json::to_vec_pretty(&data).map_err(ApiError::internal)?;
+    let disposition = format!("attachment; filename=\"{filename}\"");
+    Ok((
+        StatusCode::OK,
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/json; charset=utf-8".to_string(),
+            ),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        body,
+    )
+        .into_response())
+}
+
+async fn import_config(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(body): Json<ConfigExport>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_auth(&state, &headers).await?;
+    state
+        .db
+        .import_config(&body)
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    state.request_reload();
+    Ok(Json(serde_json::json!({
+        "ok": true,
+        "settings": true,
+        "connections": body.connections.len(),
+        "auth_tokens": body.auth_tokens.len(),
+        "sync_logs": "not imported",
+        "file_data": "not imported",
+        "note": "Sessions cleared — re-login may be required. Sync logs and file contents were left unchanged."
+    })))
 }
 
 // ── Connections ───────────────────────────────────────────────

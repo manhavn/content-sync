@@ -99,10 +99,16 @@ content-sync serve
 | `content-sync quit` | Dừng process background |
 | `content-sync sync` | Đồng bộ 1 lần rồi thoát |
 | `content-sync status` | Xem cấu hình (kèm trạng thái background) |
+| `content-sync export` | Export cấu hình hệ thống ra `export.content.sync.YYYY-MM-DD.HH-MM-SS.json` |
+| `content-sync export -o backup.json` | Export ra đường dẫn tùy chọn |
+| `content-sync import <file>` | Import cấu hình (có hỏi xác nhận; dùng `-y` để bỏ qua) |
 | `content-sync token create --name laptop` | Tạo token login Web UI |
 | `content-sync token show admin` | In raw token |
 | `content-sync token list` / `delete` / `set` | Quản lý auth tokens |
 | `content-sync connection add/list/set/delete/test` | Quản lý DB connections |
+
+Export/import chỉ gồm **settings, connections (kèm secret), auth tokens**.  
+**Không** gồm: sync logs, file cache, hay nội dung file trong watch dir.
 
 ### Drivers
 
@@ -133,7 +139,7 @@ Remote schema (mọi driver SQL / Mongo document): `id`, `file_name` (unique), `
 2. **Files** — CRUD file raw text → ghi local + push remote  
 3. **Connections** — CRUD URL/token; driver; Bật/Tắt; Test/migrate  
 4. **Auth Tokens** — token đăng nhập UI  
-5. **Settings** — watch dir, poll, backoff, log retention  
+5. **Settings** — poll, backoff, log retention, **export/import cấu hình**  
 
 Language: EN (default) / VI toggle (localStorage).
 
@@ -144,3 +150,4 @@ Language: EN (default) / VI toggle (localStorage).
 - `GET/POST /api/files` · `PUT/DELETE /api/files/:name` (`{ "file_name", "content" }`)
 - `GET/POST /api/connections` · `PUT/DELETE /api/connections/:id`
 - `GET/PUT /api/settings`
+- `GET  /api/config/export` · `POST /api/config/import` (chỉ config; không logs/files)

@@ -570,6 +570,8 @@ async fn list_files(
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_auth(&state, &headers).await?;
+    // Heal leftovers if a connection was removed without cache cascade
+    let _ = state.db.purge_orphan_file_cache();
     let conns = state.db.list_connections().map_err(ApiError::internal)?;
     let conn_names: std::collections::HashMap<_, _> = conns
         .iter()
@@ -578,6 +580,13 @@ async fn list_files(
     let list = state.db.list_file_cache().map_err(ApiError::internal)?;
     let views: Vec<_> = list
         .iter()
+        .filter(|r| {
+            // Never surface cache rows for deleted connections
+            match r.connection_id.as_deref() {
+                None | Some("local") => true,
+                Some(id) => conn_names.contains_key(id),
+            }
+        })
         .map(|r| {
             let preview: String = r.content.chars().take(120).collect();
             let cid = r.connection_id.clone().unwrap_or_default();

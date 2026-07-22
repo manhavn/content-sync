@@ -133,6 +133,15 @@ impl ConfigDb {
                 [],
             );
         }
+        // Heal orphans left by older builds that deleted connections without cascade
+        let _ = conn.execute(
+            r#"
+            DELETE FROM file_cache
+            WHERE connection_id != 'local'
+              AND connection_id NOT IN (SELECT id FROM connections)
+            "#,
+            [],
+        );
         Ok(())
     }
 
@@ -631,16 +640,41 @@ impl ConfigDb {
 
     pub fn delete_connection(&self, id: &str) -> Result<()> {
         let conn = self.conn.lock();
-        // Cascade: every local row keyed by this connection
-        conn.execute(
+        let tx = conn.unchecked_transaction()?;
+        // Cascade local DB only — do NOT delete watch_dir files on disk
+        tx.execute(
             "DELETE FROM file_cache WHERE connection_id = ?1",
             params![id],
         )?;
-        let n = conn.execute("DELETE FROM connections WHERE id = ?1", params![id])?;
+        let n = tx.execute("DELETE FROM connections WHERE id = ?1", params![id])?;
         if n == 0 {
             return Err(anyhow!("connection not found"));
         }
+        // Safety net: drop any other orphan cache rows
+        tx.execute(
+            r#"
+            DELETE FROM file_cache
+            WHERE connection_id != 'local'
+              AND connection_id NOT IN (SELECT id FROM connections)
+            "#,
+            [],
+        )?;
+        tx.commit()?;
         Ok(())
+    }
+
+    /// Remove `file_cache` rows whose connection no longer exists (cache only, not disk).
+    pub fn purge_orphan_file_cache(&self) -> Result<usize> {
+        let conn = self.conn.lock();
+        let n = conn.execute(
+            r#"
+            DELETE FROM file_cache
+            WHERE connection_id != 'local'
+              AND connection_id NOT IN (SELECT id FROM connections)
+            "#,
+            [],
+        )?;
+        Ok(n)
     }
 
     // ── File cache (lean schema) ──────────────────────────────

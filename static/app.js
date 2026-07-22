@@ -13,6 +13,13 @@ const state = {
 const PAGE_SIZE = 15;
 const listCache = { logs: [], files: [], connections: [], auth: [] };
 const listPage = { logs: 1, files: 1, connections: 1, auth: 1 };
+/** Search / filter state per list (client-side on cached arrays) */
+const listFilter = {
+  logs: { q: "", level: "" },
+  files: { q: "", connectionId: "" },
+  connections: { q: "", driver: "", status: "" },
+  auth: { q: "", status: "" },
+};
 
 function paginate(items, page, pageSize = PAGE_SIZE) {
   const total = items.length;
@@ -28,6 +35,198 @@ function paginate(items, page, pageSize = PAGE_SIZE) {
     from: total === 0 ? 0 : start + 1,
     to: Math.min(start + pageSize, total),
   };
+}
+
+function normQ(s) {
+  return String(s ?? "").trim().toLowerCase();
+}
+
+function includesQ(haystack, q) {
+  if (!q) return true;
+  return String(haystack ?? "").toLowerCase().includes(q);
+}
+
+function filterLogs(items) {
+  const q = normQ(listFilter.logs.q);
+  const level = listFilter.logs.level;
+  return items.filter((r) => {
+    if (level && r.level !== level) return false;
+    if (!q) return true;
+    return includesQ(r.message, q) || includesQ(r.level, q) || includesQ(r.created_at, q);
+  });
+}
+
+function filterFiles(items) {
+  const q = normQ(listFilter.files.q);
+  const connId = listFilter.files.connectionId;
+  return items.filter((f) => {
+    if (connId && (f.connection_id || "") !== connId) return false;
+    if (!q) return true;
+    return (
+      includesQ(f.file_name, q) ||
+      includesQ(f.file_path, q) ||
+      includesQ(f.connection_name, q) ||
+      includesQ(f.connection_id, q)
+    );
+  });
+}
+
+function filterConnections(items) {
+  const q = normQ(listFilter.connections.q);
+  const driver = listFilter.connections.driver;
+  const status = listFilter.connections.status;
+  return items.filter((c) => {
+    if (driver && (c.driver || "sql_api") !== driver) return false;
+    if (status === "on" && !c.enabled) return false;
+    if (status === "off" && c.enabled) return false;
+    if (!q) return true;
+    return (
+      includesQ(c.name, q) ||
+      includesQ(c.url, q) ||
+      includesQ(c.table_name, q) ||
+      includesQ(c.watch_dir, q) ||
+      includesQ(c.driver, q) ||
+      includesQ(c.last_error, q)
+    );
+  });
+}
+
+function filterAuth(items) {
+  const q = normQ(listFilter.auth.q);
+  const status = listFilter.auth.status;
+  return items.filter((tok) => {
+    if (status === "on" && !tok.enabled) return false;
+    if (status === "off" && tok.enabled) return false;
+    if (!q) return true;
+    return includesQ(tok.name, q) || includesQ(tok.token_prefix, q);
+  });
+}
+
+/** Wire search/filter controls once; re-render current list without refetch */
+function initListFilters() {
+  const bind = (searchId, filterKeys, onChange) => {
+    const searchEl = $(searchId);
+    if (searchEl) {
+      let timer = null;
+      const fire = () => {
+        clearTimeout(timer);
+        timer = setTimeout(onChange, 120);
+      };
+      searchEl.addEventListener("input", fire);
+      searchEl.addEventListener("search", () => {
+        clearTimeout(timer);
+        onChange();
+      });
+    }
+    filterKeys.forEach(({ id, apply }) => {
+      const el = $(id);
+      if (el) el.addEventListener("change", () => { apply(el); onChange(); });
+    });
+  };
+
+  bind("#logs-search", [
+    { id: "#logs-filter-level", apply: (el) => { listFilter.logs.level = el.value; } },
+  ], () => {
+    listFilter.logs.q = $("#logs-search")?.value || "";
+    listPage.logs = 1;
+    renderLogsPage();
+  });
+
+  bind("#files-search", [
+    { id: "#files-filter-conn", apply: (el) => { listFilter.files.connectionId = el.value; } },
+  ], () => {
+    listFilter.files.q = $("#files-search")?.value || "";
+    listPage.files = 1;
+    renderFilesPage();
+  });
+
+  bind("#conn-search", [
+    { id: "#conn-filter-driver", apply: (el) => { listFilter.connections.driver = el.value; } },
+    { id: "#conn-filter-status", apply: (el) => { listFilter.connections.status = el.value; } },
+  ], () => {
+    listFilter.connections.q = $("#conn-search")?.value || "";
+    listPage.connections = 1;
+    renderConnectionsPage();
+  });
+
+  bind("#auth-search", [
+    { id: "#auth-filter-status", apply: (el) => { listFilter.auth.status = el.value; } },
+  ], () => {
+    listFilter.auth.q = $("#auth-search")?.value || "";
+    listPage.auth = 1;
+    renderAuthTokensPage();
+  });
+
+  const clear = (ids, reset, pageKey, render) => {
+    const btn = $(ids.btn);
+    if (!btn) return;
+    btn.onclick = () => {
+      reset();
+      if (ids.search) {
+        const s = $(ids.search);
+        if (s) s.value = "";
+      }
+      (ids.selects || []).forEach((sid) => {
+        const el = $(sid);
+        if (el) el.value = "";
+      });
+      listPage[pageKey] = 1;
+      render();
+    };
+  };
+
+  clear(
+    { btn: "#logs-clear", search: "#logs-search", selects: ["#logs-filter-level"] },
+    () => { listFilter.logs = { q: "", level: "" }; },
+    "logs",
+    renderLogsPage
+  );
+  clear(
+    { btn: "#files-clear", search: "#files-search", selects: ["#files-filter-conn"] },
+    () => { listFilter.files = { q: "", connectionId: "" }; },
+    "files",
+    renderFilesPage
+  );
+  clear(
+    { btn: "#conn-clear", search: "#conn-search", selects: ["#conn-filter-driver", "#conn-filter-status"] },
+    () => { listFilter.connections = { q: "", driver: "", status: "" }; },
+    "connections",
+    renderConnectionsPage
+  );
+  clear(
+    { btn: "#auth-clear", search: "#auth-search", selects: ["#auth-filter-status"] },
+    () => { listFilter.auth = { q: "", status: "" }; },
+    "auth",
+    renderAuthTokensPage
+  );
+}
+
+/** Populate files connection filter from current file list (unique ids) */
+function syncFilesConnFilterOptions() {
+  const sel = $("#files-filter-conn");
+  if (!sel) return;
+  const prev = listFilter.files.connectionId || sel.value || "";
+  const map = new Map();
+  (listCache.files || []).forEach((f) => {
+    const id = f.connection_id || "";
+    if (!id || map.has(id)) return;
+    map.set(id, f.connection_name || id);
+  });
+  const opts = [`<option value="">${esc(t("filter_all_connections"))}</option>`];
+  [...map.entries()]
+    .sort((a, b) => String(a[1]).localeCompare(String(b[1])))
+    .forEach(([id, name]) => {
+      opts.push(`<option value="${escAttr(id)}">${esc(name)}</option>`);
+    });
+  sel.innerHTML = opts.join("");
+  // Keep selection if still present
+  if (prev && map.has(prev)) {
+    sel.value = prev;
+    listFilter.files.connectionId = prev;
+  } else {
+    sel.value = "";
+    listFilter.files.connectionId = "";
+  }
 }
 
 function renderPager(el, meta, onPage) {
@@ -208,14 +407,16 @@ async function loadDashboard() {
 }
 
 function renderLogsPage() {
-  const meta = paginate(listCache.logs, listPage.logs);
+  const filtered = filterLogs(listCache.logs);
+  const meta = paginate(filtered, listPage.logs);
   listPage.logs = meta.page;
+  const emptyMsg = listCache.logs.length && !filtered.length ? t("no_filter_results") : t("no_logs");
   $("#sync-log-body").innerHTML = meta.items.map((r) => `
     <tr>
       <td class="muted">${esc(r.created_at)}</td>
       <td><span class="badge ${r.level === "error" ? "err" : "on"}">${esc(r.level)}</span></td>
       <td>${esc(r.message)}</td>
-    </tr>`).join("") || `<tr><td colspan="3" class="muted">${esc(t("no_logs"))}</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="3" class="muted">${esc(emptyMsg)}</td></tr>`;
   renderPager($("#logs-pager"), meta, (n) => {
     listPage.logs = n;
     renderLogsPage();
@@ -235,13 +436,16 @@ async function loadFiles() {
   try {
     const data = await api("/api/files");
     listCache.files = data.files || [];
+    syncFilesConnFilterOptions();
     renderFilesPage();
   } catch (e) { toast(e.message, true); }
 }
 
 function renderFilesPage() {
-  const meta = paginate(listCache.files, listPage.files);
+  const filtered = filterFiles(listCache.files);
+  const meta = paginate(filtered, listPage.files);
   listPage.files = meta.page;
+  const emptyMsg = listCache.files.length && !filtered.length ? t("no_filter_results") : t("no_files");
   $("#files-body").innerHTML = meta.items.map((f) => `
     <tr>
       <td><strong>${esc(f.file_name)}</strong></td>
@@ -257,7 +461,7 @@ function renderFilesPage() {
           <button class="btn sm danger" data-del-file="${esc(f.file_name)}" data-conn="${esc(f.connection_id || "")}">${esc(t("delete"))}</button>
         </div>
       </td>
-    </tr>`).join("") || `<tr><td colspan="6" class="muted">${esc(t("no_files"))}</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="6" class="muted">${esc(emptyMsg)}</td></tr>`;
 
   $$("#files-body [data-edit-file]").forEach((b) => {
     b.onclick = () => openFileModal(b.dataset.conn, b.dataset.editFile);
@@ -343,8 +547,10 @@ async function loadConnections() {
 
 function renderConnectionsPage() {
   const list = listCache.connections;
-  const meta = paginate(list, listPage.connections);
+  const filtered = filterConnections(list);
+  const meta = paginate(filtered, listPage.connections);
   listPage.connections = meta.page;
+  const emptyMsg = list.length && !filtered.length ? t("no_filter_results") : t("no_conn");
   $("#conn-body").innerHTML = meta.items.map((c) => `
     <tr>
       <td><strong>${esc(c.name)}</strong></td>
@@ -365,7 +571,7 @@ function renderConnectionsPage() {
           <button class="btn sm danger" data-del-conn="${c.id}">${esc(t("delete"))}</button>
         </div>
       </td>
-    </tr>`).join("") || `<tr><td colspan="8" class="muted">${esc(t("no_conn"))}</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="8" class="muted">${esc(emptyMsg)}</td></tr>`;
 
   $$("#conn-body [data-toggle-conn]").forEach((b) => {
     b.onclick = async () => {
@@ -469,8 +675,10 @@ async function loadAuthTokens() {
 }
 
 function renderAuthTokensPage() {
-  const meta = paginate(listCache.auth, listPage.auth);
+  const filtered = filterAuth(listCache.auth);
+  const meta = paginate(filtered, listPage.auth);
   listPage.auth = meta.page;
+  const emptyMsg = listCache.auth.length && !filtered.length ? t("no_filter_results") : t("no_auth");
   $("#auth-body").innerHTML = meta.items.map((tok) => `
     <tr>
       <td><strong>${esc(tok.name)}</strong></td>
@@ -484,7 +692,7 @@ function renderAuthTokensPage() {
           <button class="btn sm danger" data-del-auth="${tok.id}">${esc(t("delete"))}</button>
         </div>
       </td>
-    </tr>`).join("") || `<tr><td colspan="6" class="muted">${esc(t("no_auth"))}</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="6" class="muted">${esc(emptyMsg)}</td></tr>`;
 
   $$("#auth-body [data-toggle-auth]").forEach((b) => {
     b.onclick = async () => {
@@ -605,6 +813,7 @@ function escAttr(s) { return esc(s).replace(/'/g, "&#39;"); }
 
 // boot
 initLangToggles();
+initListFilters();
 trySession();
 setInterval(() => {
   if (state.sessionId && !$("#tab-dashboard").classList.contains("hidden")) {

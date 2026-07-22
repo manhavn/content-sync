@@ -71,6 +71,15 @@
           </header>
           <div class="grid stats" id="stats"></div>
           <h3 data-i18n="sync_log">Sync log</h3>
+          <div class="list-toolbar" id="logs-toolbar">
+            <input type="search" id="logs-search" class="list-search" data-i18n-placeholder="search_logs" placeholder="Search message…" autocomplete="off" />
+            <select id="logs-filter-level" class="list-filter" aria-label="Level">
+              <option value="" data-i18n="filter_all_levels">All levels</option>
+              <option value="info">info</option>
+              <option value="error">error</option>
+            </select>
+            <button type="button" class="btn sm ghost list-clear" id="logs-clear" data-i18n="filter_clear">Clear</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -93,6 +102,13 @@
             <button id="btn-file-new" class="btn primary" data-i18n="files_add">+ Add file</button>
           </header>
           <p class="muted" data-i18n="files_help">Synced files under the watch directory. Content is stored as raw text (any format).</p>
+          <div class="list-toolbar" id="files-toolbar">
+            <input type="search" id="files-search" class="list-search" data-i18n-placeholder="search_files" placeholder="Search file, path…" autocomplete="off" />
+            <select id="files-filter-conn" class="list-filter" aria-label="Connection">
+              <option value="" data-i18n="filter_all_connections">All connections</option>
+            </select>
+            <button type="button" class="btn sm ghost list-clear" id="files-clear" data-i18n="filter_clear">Clear</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -118,6 +134,25 @@
             <button id="btn-conn-new" class="btn primary" data-i18n="conn_add">+ Connection</button>
           </header>
           <p class="muted" data-i18n="conn_help" data-i18n-html>Enable/disable each connection to sync multiple Bunny DBs. Only <strong>enabled</strong> connections are pulled/pushed.</p>
+          <div class="list-toolbar" id="conn-toolbar">
+            <input type="search" id="conn-search" class="list-search" data-i18n-placeholder="search_connections" placeholder="Search name, URL, table…" autocomplete="off" />
+            <select id="conn-filter-driver" class="list-filter" aria-label="Driver">
+              <option value="" data-i18n="filter_all_drivers">All drivers</option>
+              <option value="sql_api">sql_api</option>
+              <option value="libsql">libsql</option>
+              <option value="sqlite">sqlite</option>
+              <option value="postgres">postgres</option>
+              <option value="mysql">mysql</option>
+              <option value="mariadb">mariadb</option>
+              <option value="mongodb">mongodb</option>
+            </select>
+            <select id="conn-filter-status" class="list-filter" aria-label="Status">
+              <option value="" data-i18n="filter_all_status">All status</option>
+              <option value="on" data-i18n="filter_enabled">Enabled</option>
+              <option value="off" data-i18n="filter_disabled">Disabled</option>
+            </select>
+            <button type="button" class="btn sm ghost list-clear" id="conn-clear" data-i18n="filter_clear">Clear</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>
@@ -146,6 +181,15 @@
           </header>
           <p class="muted" data-i18n="auth_help">Tokens used to sign in to the Web UI / API. The raw token is shown only once when created.</p>
           <div id="raw-token-banner" class="banner hidden"></div>
+          <div class="list-toolbar" id="auth-toolbar">
+            <input type="search" id="auth-search" class="list-search" data-i18n-placeholder="search_auth" placeholder="Search name, prefix…" autocomplete="off" />
+            <select id="auth-filter-status" class="list-filter" aria-label="Status">
+              <option value="" data-i18n="filter_all_status">All status</option>
+              <option value="on" data-i18n="filter_enabled">Enabled</option>
+              <option value="off" data-i18n="filter_disabled">Disabled</option>
+            </select>
+            <button type="button" class="btn sm ghost list-clear" id="auth-clear" data-i18n="filter_clear">Clear</button>
+          </div>
           <div class="table-wrap">
             <table>
               <thead>

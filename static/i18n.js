@@ -138,6 +138,20 @@ const I18N = {
     pager_prev: "Previous page",
     pager_next: "Next page",
     pager_last: "Last page",
+
+    // search / filter
+    search_logs: "Search message…",
+    search_files: "Search file, path…",
+    search_connections: "Search name, URL, table…",
+    search_auth: "Search name, prefix…",
+    filter_all_levels: "All levels",
+    filter_all_connections: "All connections",
+    filter_all_drivers: "All drivers",
+    filter_all_status: "All status",
+    filter_enabled: "Enabled",
+    filter_disabled: "Disabled",
+    filter_clear: "Clear",
+    no_filter_results: "No results match your search / filters",
   },
   vi: {
     app_name: "Content Sync",
@@ -269,6 +283,20 @@ const I18N = {
     pager_prev: "Trang trước",
     pager_next: "Trang sau",
     pager_last: "Trang cuối",
+
+    // search / filter
+    search_logs: "Tìm trong message…",
+    search_files: "Tìm file, path…",
+    search_connections: "Tìm tên, URL, bảng…",
+    search_auth: "Tìm tên, prefix…",
+    filter_all_levels: "Mọi mức",
+    filter_all_connections: "Mọi connection",
+    filter_all_drivers: "Mọi driver",
+    filter_all_status: "Mọi trạng thái",
+    filter_enabled: "Đang bật",
+    filter_disabled: "Đang tắt",
+    filter_clear: "Xoá lọc",
+    no_filter_results: "Không có kết quả khớp tìm kiếm / bộ lọc",
   },
 };
 

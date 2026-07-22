@@ -441,7 +441,12 @@ pub struct Settings {
     /// @deprecated kept for older UI clients; prefer per-connection watch_dir
     #[serde(default = "default_files_root")]
     pub watch_dir: String,
-    /// Normal poll interval when connections are healthy
+    /// When true, run full pull+push on a timer (`poll_interval_secs`).
+    /// When false, only initial sync at start + file-watcher / manual Sync now.
+    /// Persisted in config.sqlite; survives restarts. Default true.
+    #[serde(default = "default_auto_poll")]
+    pub auto_poll: bool,
+    /// Normal poll interval when connections are healthy (used only if `auto_poll` is true)
     pub poll_interval_secs: u64,
     /// Base backoff (seconds) after a failed remote call; doubles each failure up to max
     #[serde(default = "default_error_backoff_secs")]
@@ -455,6 +460,9 @@ pub struct Settings {
     pub web_bind: String,
 }
 
+fn default_auto_poll() -> bool {
+    true
+}
 fn default_error_backoff_secs() -> u64 {
     120
 }
@@ -477,6 +485,7 @@ impl Default for Settings {
         Self {
             default_files_root: root.clone(),
             watch_dir: root,
+            auto_poll: default_auto_poll(),
             poll_interval_secs: 30,
             error_backoff_secs: default_error_backoff_secs(),
             error_backoff_max_secs: default_error_backoff_max_secs(),

@@ -121,6 +121,9 @@ const I18N = {
 
     // settings
     settings_title: "Settings",
+    label_auto_poll: "Automatic poll cycle (pull + push on a timer)",
+    label_auto_poll_hint:
+      "When off: still syncs once at startup, on file changes (watcher), and on Sync now. Setting is saved and kept after restart.",
     label_poll: "Poll interval (seconds) — periodic pull when healthy",
     label_backoff: "Error backoff base (seconds) — wait longer after remote failures (rate limit)",
     label_backoff_max: "Error backoff max (seconds) — exponential backoff cap",
@@ -280,6 +283,9 @@ const I18N = {
     token_created: "Token đã tạo — hãy copy raw token",
 
     settings_title: "Settings",
+    label_auto_poll: "Chu kỳ poll tự động (pull + push theo timer)",
+    label_auto_poll_hint:
+      "Khi tắt: vẫn sync một lần lúc khởi động, khi file đổi (watcher), và khi bấm Sync now. Cài đặt được lưu và giữ sau khi restart.",
     label_poll: "Poll interval (giây) — pull định kỳ khi healthy",
     label_backoff: "Error backoff base (giây) — chờ lâu hơn khi remote fail (tránh rate limit)",
     label_backoff_max: "Error backoff max (giây) — trần exponential backoff",

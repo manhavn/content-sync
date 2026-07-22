@@ -10,6 +10,15 @@ pub struct ConfigDb {
     conn: Arc<Mutex<SqliteConn>>,
 }
 
+/// Parse boolean settings stored as text (`true`/`false`, `1`/`0`, `yes`/`no`, …).
+fn parse_bool_setting(s: &str) -> bool {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "1" | "true" | "yes" | "on" => true,
+        "0" | "false" | "no" | "off" => false,
+        _ => true, // unknown → default on (safe: keep periodic sync)
+    }
+}
+
 impl ConfigDb {
     pub fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
@@ -177,6 +186,11 @@ impl ConfigDb {
         Ok(Settings {
             default_files_root: root,
             watch_dir: watch,
+            auto_poll: self
+                .get_setting("auto_poll")?
+                .as_deref()
+                .map(parse_bool_setting)
+                .unwrap_or(defaults.auto_poll),
             poll_interval_secs: self
                 .get_setting("poll_interval_secs")?
                 .and_then(|s| s.parse().ok())
@@ -200,6 +214,7 @@ impl ConfigDb {
     pub fn save_settings(&self, s: &Settings) -> Result<()> {
         self.set_setting("watch_dir", &s.watch_dir)?;
         self.set_setting("default_files_root", &s.default_files_root)?;
+        self.set_setting("auto_poll", if s.auto_poll { "true" } else { "false" })?;
         self.set_setting("poll_interval_secs", &s.poll_interval_secs.to_string())?;
         self.set_setting("error_backoff_secs", &s.error_backoff_secs.to_string())?;
         self.set_setting(

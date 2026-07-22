@@ -828,6 +828,7 @@ $("#btn-auth-new").onclick = () => {
 async function loadSettings() {
   try {
     const s = await api("/api/settings");
+    $("#set-auto-poll").checked = s.auto_poll !== false;
     $("#set-poll").value = s.poll_interval_secs || 30;
     $("#set-error-backoff").value = s.error_backoff_secs || 120;
     $("#set-error-backoff-max").value = s.error_backoff_max_secs || 900;
@@ -842,6 +843,7 @@ async function loadSettings() {
 $("#btn-save-settings").onclick = async () => {
   try {
     const body = {
+      auto_poll: $("#set-auto-poll").checked,
       poll_interval_secs: Number($("#set-poll").value) || 30,
       error_backoff_secs: Number($("#set-error-backoff").value) || 120,
       error_backoff_max_secs: Number($("#set-error-backoff-max").value) || 900,

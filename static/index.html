@@ -227,6 +227,13 @@
           <header class="page-head"><h2 data-i18n="settings_title">Settings</h2></header>
           <div class="settings-stack">
             <div class="card form-card">
+              <label class="check-row" for="set-auto-poll">
+                <input id="set-auto-poll" type="checkbox" checked />
+                <span data-i18n="label_auto_poll">Automatic poll cycle (pull + push on a timer)</span>
+              </label>
+              <p class="muted small" data-i18n="label_auto_poll_hint">
+                When off: still syncs once at startup, on file changes (watcher), and on Sync now. Setting is saved and kept after restart.
+              </p>
               <label data-i18n="label_poll">Poll interval (seconds) — periodic pull when healthy</label>
               <input id="set-poll" type="number" min="5" />
               <label data-i18n="label_backoff">Error backoff base (seconds)</label>

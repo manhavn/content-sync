@@ -237,6 +237,8 @@ struct SettingsUpdate {
     #[serde(default)]
     watch_dir: Option<String>,
     #[serde(default)]
+    auto_poll: Option<bool>,
+    #[serde(default)]
     poll_interval_secs: Option<u64>,
     #[serde(default)]
     error_backoff_secs: Option<u64>,
@@ -260,6 +262,9 @@ async fn put_settings(
     }
     if let Some(v) = body.watch_dir {
         s.watch_dir = v;
+    }
+    if let Some(v) = body.auto_poll {
+        s.auto_poll = v;
     }
     if let Some(v) = body.poll_interval_secs {
         s.poll_interval_secs = v;

@@ -263,6 +263,10 @@ pub enum SettingsCmd {
     Show,
     /// Update settings (only flags you pass are changed)
     Set {
+        /// Enable/disable periodic poll sync (true/false). Default true.
+        /// When false: initial sync + watcher + manual Sync still work; no timer cycle.
+        #[arg(long)]
+        auto_poll: Option<bool>,
         #[arg(long)]
         poll_interval_secs: Option<u64>,
         #[arg(long)]
@@ -413,6 +417,15 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             println!("Config dir     : {}", config::config_dir().display());
             println!("Config sqlite  : {}", db_path.display());
             println!("Default files  : {}", s.default_files_root);
+            println!(
+                "Auto poll      : {}{}",
+                if s.auto_poll { "on" } else { "off" },
+                if s.auto_poll {
+                    format!(" (every {}s)", s.poll_interval_secs)
+                } else {
+                    String::new()
+                }
+            );
             println!("Poll interval  : {}s", s.poll_interval_secs);
             println!(
                 "Error backoff  : {}s base / {}s max",
@@ -753,6 +766,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
         Commands::Settings(cmd) => match cmd {
             SettingsCmd::Show => {
                 let s = db.get_settings()?;
+                println!("auto_poll               : {}", s.auto_poll);
                 println!("poll_interval_secs      : {}", s.poll_interval_secs);
                 println!("error_backoff_secs      : {}", s.error_backoff_secs);
                 println!("error_backoff_max_secs  : {}", s.error_backoff_max_secs);
@@ -763,23 +777,28 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 Ok(())
             }
             SettingsCmd::Set {
+                auto_poll,
                 poll_interval_secs,
                 error_backoff_secs,
                 error_backoff_max_secs,
                 log_retention_hours,
                 web_bind,
             } => {
-                if poll_interval_secs.is_none()
+                if auto_poll.is_none()
+                    && poll_interval_secs.is_none()
                     && error_backoff_secs.is_none()
                     && error_backoff_max_secs.is_none()
                     && log_retention_hours.is_none()
                     && web_bind.is_none()
                 {
                     anyhow::bail!(
-                        "pass at least one of --poll-interval-secs --error-backoff-secs --error-backoff-max-secs --log-retention-hours --web-bind"
+                        "pass at least one of --auto-poll --poll-interval-secs --error-backoff-secs --error-backoff-max-secs --log-retention-hours --web-bind"
                     );
                 }
                 let mut s = db.get_settings()?;
+                if let Some(v) = auto_poll {
+                    s.auto_poll = v;
+                }
                 if let Some(v) = poll_interval_secs {
                     s.poll_interval_secs = v;
                 }
@@ -797,6 +816,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
                 db.save_settings(&s)?;
                 println!("Settings saved (web_bind needs serve restart if changed).");
+                println!("auto_poll               : {}", s.auto_poll);
                 println!("poll_interval_secs      : {}", s.poll_interval_secs);
                 println!("error_backoff_secs      : {}", s.error_backoff_secs);
                 println!("error_backoff_max_secs  : {}", s.error_backoff_max_secs);

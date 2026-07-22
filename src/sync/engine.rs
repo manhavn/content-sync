@@ -517,6 +517,11 @@ fn read_local_hash(path: &Path) -> Result<String> {
 }
 
 fn next_poll_delay(state: &AppState, settings: &Settings) -> Duration {
+    // When periodic poll is off, still wake periodically so re-enabling
+    // auto_poll (or request_reload) takes effect without restarting the process.
+    if !settings.auto_poll {
+        return Duration::from_secs(5);
+    }
     let healthy = Duration::from_secs(settings.poll_interval_secs.max(5));
     if !state.any_in_backoff() {
         return healthy;
@@ -565,10 +570,12 @@ pub async fn run_sync_loop(state: Arc<AppState>, mut shutdown: tokio::sync::watc
                         }
                     };
                 }
-                if let Err(e) = sync_once(&state).await {
-                    state.set_error(format!("periodic sync error: {e}"));
-                }
                 let settings = state.db.get_settings().unwrap_or_default();
+                if settings.auto_poll {
+                    if let Err(e) = sync_once(&state).await {
+                        state.set_error(format!("periodic sync error: {e}"));
+                    }
+                }
                 next_poll = Instant::now() + next_poll_delay(&state, &settings);
             }
             _ = tokio::time::sleep(Duration::from_millis(200)) => {

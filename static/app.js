@@ -582,6 +582,10 @@ function closeModal() {
 
 $("#modal-close").onclick = closeModal;
 $("#modal-cancel").onclick = closeModal;
+// Click backdrop (outside the card) to dismiss
+$("#modal").addEventListener("click", (e) => {
+  if (e.target === e.currentTarget) closeModal();
+});
 $("#modal-save").onclick = async () => {
   if (!modalSaveFn) return;
   try {

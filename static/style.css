@@ -221,22 +221,35 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   border-radius: 14px; padding: 20px; box-shadow: 0 30px 80px rgba(0,0,0,0.5);
   display: flex; flex-direction: column;
   box-sizing: border-box;
-  overflow-x: hidden;
-  overflow-y: auto;
+  /* Clip to max-height; scroll lives in #modal-body so actions stay visible */
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 .modal-card > .page-head { flex-shrink: 0; margin-bottom: 0; }
 .modal-card #modal-body {
   display: flex; flex-direction: column; gap: 8px;
-  margin: 12px 0 18px; min-height: 0; flex: 1;
+  margin: 12px 0 12px; min-height: 0; flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
-/* File content editor grows and scrolls inside the modal */
+/* File content editor: fill remaining body space; never cover footer actions */
 .modal-card #m-file-content {
-  flex: 1; min-height: 280px; resize: vertical;
+  flex: 1 1 auto;
+  min-height: 120px;
+  max-height: 100%;
+  resize: vertical;
   font-family: var(--mono); font-size: 12px; line-height: 1.45;
   overflow: auto;
 }
-.modal-actions { display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0; }
+.modal-actions {
+  display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
+  position: relative; z-index: 1;
+  background: var(--bg2);
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  margin-top: 0;
+}
 
 /* Banner / toast */
 .banner {

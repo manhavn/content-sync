@@ -294,6 +294,13 @@ Dockerfile: [`docker/Dockerfile`](./docker/Dockerfile) (Alpine + binary **linux 
 - **Mặc định (`--engine auto`):** ưu tiên **Podman**, sau đó Docker
 - Ép: `--engine podman` hoặc `--engine docker` (hoặc `CONTAINER_ENGINE=…`)
 
+**Podman multi-arch** (script tự làm đúng thứ tự):
+
+1. `podman manifest create <name>`
+2. `podman build --platform linux/amd64 --manifest <name> …`
+3. `podman build --platform linux/arm64 --manifest <name> …` (`aarch64` → `arm64`)
+4. `podman manifest push --all <name> docker://…`
+
 ### Lệnh thường dùng
 
 ```bash

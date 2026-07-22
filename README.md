@@ -294,6 +294,13 @@ Dockerfile: [`docker/Dockerfile`](./docker/Dockerfile) (Alpine + static **linux 
 - **Default (`--engine auto`):** prefer **Podman**, then Docker
 - Force: `--engine podman` or `--engine docker` (or `CONTAINER_ENGINE=…`)
 
+**Podman multi-arch** (script does this for you):
+
+1. `podman manifest create <name>`
+2. `podman build --platform linux/amd64 --manifest <name> …`
+3. `podman build --platform linux/arm64 --manifest <name> …` (`aarch64` → `arm64`)
+4. `podman manifest push --all <name> docker://…`
+
 ### Common commands
 
 ```bash

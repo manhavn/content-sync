@@ -138,7 +138,11 @@ Flags:
 
 Podman notes:
   scripts/registry-image-push.sh --engine podman --to dockerhub
-  Multi-arch uses: podman build --platform … --manifest … && podman manifest push
+  Multi-arch flow (required order):
+    1) podman manifest create <name>
+    2) podman build --platform linux/amd64  --manifest <name> …
+    3) podman build --platform linux/arm64  --manifest <name> …   # aarch64 → arm64
+    4) podman manifest push --all <name> docker://<registry/ref>
   Login: podman login (same username/token env vars as Docker)
 EOF
   exit "${1:-0}"
@@ -657,38 +661,74 @@ build_with_podman() {
     return 0
   fi
 
-  # Multi-arch: build into a local manifest list, then push each remote tag.
-  # https://docs.podman.io/en/latest/markdown/podman-build.1.html (--manifest)
+  # Multi-arch (Podman): create empty manifest first, then build each platform
+  # into that manifest (amd64 / arm64). Do not pass a comma-list to a single
+  # `podman build --platform a,b --manifest` without create — order matters:
+  #   1) podman manifest create
+  #   2) podman build --platform linux/amd64 --manifest …
+  #   3) podman build --platform linux/arm64 --manifest …
+  #   4) podman manifest push --all
   local manifest="localhost/${IMAGE_NAME}:manifest-${PKG_VERSION}"
-  log "podman multi-arch build → manifest $manifest (platforms=$platforms)"
+  log "podman multi-arch → manifest $manifest (platforms=$platforms)"
 
-  # Remove stale manifest if present (ignore errors)
+  # Drop stale list if present
   if [[ "$DRY_RUN" -eq 0 ]]; then
     podman manifest rm "$manifest" >/dev/null 2>&1 || true
     podman rmi "$manifest" >/dev/null 2>&1 || true
   else
-    echo "[dry-run] podman manifest rm $manifest  (ignore errors)"
+    echo "[dry-run] podman manifest rm $manifest  (ignore if missing)"
   fi
 
-  run podman build \
-    --platform "$platforms" \
-    --manifest "$manifest" \
-    --build-arg "APP_VERSION=${PKG_VERSION}" \
-    -f "$DOCKER_DIR/Dockerfile" \
-    "$DOCKER_DIR"
+  log "podman manifest create $manifest"
+  run podman manifest create "$manifest"
+
+  # Split platforms: "linux/amd64,linux/arm64" or "linux/aarch64"
+  local plat arch targetarch
+  local IFS=','
+  # shellcheck disable=SC2206
+  local plat_list=($platforms)
+  unset IFS
+
+  for plat in "${plat_list[@]}"; do
+    plat="$(echo "$plat" | xargs)" # trim
+    [[ -n "$plat" ]] || continue
+    arch="${plat##*/}"
+    # Dockerfile COPY uses binaries/amd64|arm64 — normalize aarch64 → arm64
+    case "$arch" in
+      aarch64|arm64) targetarch=arm64; plat="linux/arm64" ;;
+      x86_64|amd64)  targetarch=amd64; plat="linux/amd64" ;;
+      *)             targetarch="$arch" ;;
+    esac
+
+    if [[ "$DRY_RUN" -eq 0 && ! -f "$STAGE_DIR/${targetarch}/content-sync" ]]; then
+      die "missing staged binary for ${targetarch} (need $STAGE_DIR/${targetarch}/content-sync)"
+    fi
+
+    log "podman build --platform $plat --manifest $manifest (TARGETARCH=$targetarch)"
+    run podman build \
+      --platform "$plat" \
+      --manifest "$manifest" \
+      --build-arg "TARGETARCH=${targetarch}" \
+      --build-arg "APP_VERSION=${PKG_VERSION}" \
+      -f "$DOCKER_DIR/Dockerfile" \
+      "$DOCKER_DIR"
+  done
 
   if [[ "$NO_PUSH" -eq 1 ]]; then
     log "podman: multi-arch manifest kept locally as $manifest (not pushed)"
-    # Also tag first local name for convenience
-    local first="${ALL_TAGS[0]}"
-    run podman tag "$manifest" "$first" 2>/dev/null || true
+    log "inspect: podman manifest inspect $manifest"
+    # Point all local tags at the multi-arch list
+    local t
+    for t in "${ALL_TAGS[@]}"; do
+      log "podman tag $manifest → $t"
+      run podman tag "$manifest" "$t" 2>/dev/null || true
+    done
     return 0
   fi
 
   local t
   for t in "${ALL_TAGS[@]}"; do
     log "podman manifest push --all $manifest → $t"
-    # docker:// prefix is optional on recent podman; use plain ref for hub tags
     run podman manifest push --all "$manifest" "docker://${t}"
   done
 }

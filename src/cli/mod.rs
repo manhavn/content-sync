@@ -306,11 +306,10 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     let db_path = config::config_db_path();
     let db = ConfigDb::open(&db_path)?;
 
-    // Seed default settings if empty
+    // Seed default settings if empty (do not pre-create watch root dirs)
     if db.get_setting("watch_dir")?.is_none() {
         let defaults = Settings::default();
         db.save_settings(&defaults)?;
-        std::fs::create_dir_all(&defaults.watch_dir)?;
     }
 
     match cli.command {
@@ -320,10 +319,10 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 s.watch_dir = w;
             }
             db.save_settings(&s)?;
-            std::fs::create_dir_all(&s.watch_dir)?;
+            // Watch roots are created when a connection uses them, not as empty config subdirs.
             println!("Config dir : {}", config::config_dir().display());
             println!("Config db  : {}", db_path.display());
-            println!("Watch dir  : {}", s.watch_dir);
+            println!("Default files root : {}", s.default_files_root);
             println!("Web bind   : {}", s.web_bind);
 
             // Create first admin token if none

@@ -741,7 +741,7 @@ function openConnModal(id, existing) {
     <label>${esc(t("label_table"))}</label>
     <input id="m-table" value="${escAttr(existing?.table_name || "")}" placeholder="content_syncs" />
     <label>${esc(t("label_watch_dir_conn"))}</label>
-    <input id="m-watch" value="${escAttr(existing?.watch_dir || "")}" placeholder="~/.content-sync/files/prod" />
+    <input id="m-watch" value="${escAttr(existing?.watch_dir || "")}" placeholder="/data/sync/demo" />
     <label>${esc(t("label_db_url"))}</label>
     <input id="m-url" value="${escAttr(existing?.url || "")}" placeholder="…/v2/pipeline · libsql:// · sqlite:path · postgresql:// · mysql:// · mongodb://" />
     <label>${esc(t("label_access_token"))}${id ? " " + esc(t("label_leave_blank")) : ""}</label>

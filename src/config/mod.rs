@@ -55,9 +55,9 @@ pub fn background_log_path() -> PathBuf {
 
 pub fn ensure_config_dir() -> anyhow::Result<PathBuf> {
     let dir = config_dir();
+    // Only the config root — no child dirs (legacy `tokens/`, empty `files/` roots are unused).
+    // Auth tokens live in config-sqlite; per-connection watch dirs are created on demand.
     std::fs::create_dir_all(&dir)?;
-    let tokens = dir.join("tokens");
-    std::fs::create_dir_all(&tokens)?;
     Ok(dir)
 }
 

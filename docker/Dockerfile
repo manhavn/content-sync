@@ -14,7 +14,7 @@ FROM --platform=$BUILDPLATFORM docker.io/library/alpine:latest AS prepare
 
 RUN apk add --no-cache ca-certificates \
  && adduser -D -h /data -u 1000 appsync \
- && mkdir -p /data/.content-sync /data/files \
+ && mkdir -p /data \
  && chown -R appsync:appsync /data
 
 # ── Final image for TARGETPLATFORM (amd64 / arm64) ─────────────
@@ -52,7 +52,7 @@ USER appsync
 # Override: … content-sync serve --bind 0.0.0.0:$PORT --no-log
 EXPOSE 8080
 
-# Persist config-sqlite, tokens, pid, logs, and per-connection files
+# Persist config-sqlite, pid, logs, and per-connection watch dirs under $HOME
 VOLUME ["/data"]
 
 ENTRYPOINT ["/usr/local/bin/content-sync"]

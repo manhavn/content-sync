@@ -527,7 +527,7 @@ Remote schema (every SQL driver / Mongo document): `id`, `file_name` (unique), `
 | Path | Contents |
 |------|----------|
 | `~/.content-sync/config-sqlite` | Auth tokens, connections, settings, cache, sessions (suffix `-sqlite`, not `.sqlite`, for GCS-friendly paths) |
-| `~/.content-sync/files/<name>/` | Default watch dir per connection (one dir each) |
+| `~/.content-sync/files/<name>/` | Default watch dir per connection (created on demand when the connection is used; not a fixed empty tree) |
 | `~/.content-sync/content-sync.pid` | PID of the background daemon (`background` / `quit`) |
 | `~/.content-sync/content-sync.log` | stdout/stderr of the background daemon |
 

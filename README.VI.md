@@ -526,7 +526,7 @@ Remote schema (mọi driver SQL / Mongo document): `id`, `file_name` (unique), `
 | Path | Nội dung |
 |------|----------|
 | `~/.content-sync/config-sqlite` | Auth tokens, connections, settings, cache, sessions (hậu tố `-sqlite`, không dùng `.sqlite` — thân thiện GCS) |
-| `~/.content-sync/files/<name>/` | Watch dir mặc định theo connection (mỗi connection một dir) |
+| `~/.content-sync/files/<name>/` | Watch dir mặc định theo connection (tạo khi dùng connection; không tạo sẵn cây thư mục rỗng) |
 | `~/.content-sync/content-sync.pid` | PID daemon background (`background` / `quit`) |
 | `~/.content-sync/content-sync.log` | stdout/stderr của daemon background |
 

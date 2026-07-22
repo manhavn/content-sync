@@ -20,6 +20,29 @@ cargo build --release
 # binary: ./target/release/content-sync
 ```
 
+### Build release đa nền tảng
+
+```bash
+# fmt → build linux (gnu/musl × amd64/aarch64), windows, macOS (nếu có tool)
+./scripts/build-release-multi.sh
+
+# xem builder cho từng target
+./scripts/build-release-multi.sh --list
+
+# chỉ một số target
+./scripts/build-release-multi.sh --only x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+```
+
+Artifact trong `dist/`: `content-sync-v<ver>-<target>[.exe]` (+ `SHA256SUMS.txt`).
+
+**Ưu tiên builder:** host `cargo` → `cargo-zigbuild`+zig → `cross`+podman/docker.
+
+- **Linux musl** = static (không phụ thuộc distro).
+- **macOS / một số Windows** cần `cargo-zigbuild` + `zig` (hoặc máy native).
+- Smoke-test `--version`/`--help` khi chạy được trên host; không chạy được thì chỉ build.
+
+Release host-only: `./scripts/build-release.sh`.
+
 ## Quick start
 
 ```bash

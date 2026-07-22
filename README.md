@@ -20,6 +20,29 @@ cargo build --release
 # binary: ./target/release/content-sync
 ```
 
+### Multi-platform release builds
+
+```bash
+# fmt → build for linux (gnu/musl × amd64/aarch64), windows, macOS (if tooling allows)
+./scripts/build-release-multi.sh
+
+# list which builder each target would use
+./scripts/build-release-multi.sh --list
+
+# subset of targets
+./scripts/build-release-multi.sh --only x86_64-unknown-linux-musl,aarch64-unknown-linux-musl
+```
+
+Artifacts land in `dist/` as `content-sync-v<ver>-<target>[.exe]` (+ `SHA256SUMS.txt`).
+
+**Builder preference (per target):** host `cargo` → `cargo-zigbuild`+zig → `cross`+podman/docker.
+
+- **Linux musl** builds are static (portable across distros).
+- **macOS / some Windows** need `cargo-zigbuild` + `zig` (or a native macOS/Windows host).
+- Smoke-tests `--version`/`--help` when the binary can run on this host; otherwise build-only.
+
+Host-only release (fmt + check + build): `./scripts/build-release.sh`.
+
 ## Quick start
 
 ```bash

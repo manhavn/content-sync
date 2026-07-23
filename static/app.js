@@ -473,23 +473,25 @@ async function loadDashboard() {
     const s = await api("/api/status");
     const watchDirs = (s.watch_dirs || []).join(" · ") || "—";
     const lastMsg = s.last_sync_message || "";
+    const engineVal = s.running ? t("stat_running") : t("stat_idle");
+    const lastSyncAt = s.last_sync_at || "—";
     $("#stats").innerHTML = `
       <div class="stat">
         <div class="label" title="${escAttr(t("stat_engine"))}">${esc(t("stat_engine"))}</div>
-        <div class="value"><span class="dot ${s.running ? "on" : "off"}"></span>${esc(s.running ? t("stat_running") : t("stat_idle"))}</div>
+        <div class="value" title="${escAttr(engineVal)}"><span class="dot ${s.running ? "on" : "off"}"></span>${esc(engineVal)}</div>
       </div>
       <div class="stat">
         <div class="label" title="${escAttr(t("stat_local_files"))}">${esc(t("stat_local_files"))}</div>
-        <div class="value">${s.local_file_count}</div>
+        <div class="value" title="${escAttr(String(s.local_file_count))}">${s.local_file_count}</div>
         <div class="sub" title="${escAttr(watchDirs)}">${esc(watchDirs)}</div>
       </div>
       <div class="stat">
         <div class="label" title="${escAttr(t("stat_enabled_conns"))}">${esc(t("stat_enabled_conns"))}</div>
-        <div class="value">${s.connections_enabled}</div>
+        <div class="value" title="${escAttr(String(s.connections_enabled))}">${s.connections_enabled}</div>
       </div>
       <div class="stat">
         <div class="label" title="${escAttr(t("stat_last_sync"))}">${esc(t("stat_last_sync"))}</div>
-        <div class="value" style="font-size:1rem">${esc(s.last_sync_at || "—")}</div>
+        <div class="value" style="font-size:1rem" title="${escAttr(lastSyncAt)}">${esc(lastSyncAt)}</div>
         <div class="sub" title="${escAttr(lastMsg)}">${esc(lastMsg)}</div>
       </div>`;
     const log = await api("/api/sync/log");

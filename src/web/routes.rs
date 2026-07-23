@@ -142,12 +142,12 @@ async fn bootstrap(
     })))
 }
 
-async fn index() -> Response {
-    crate::web::serve_asset("index.html")
+async fn index(headers: HeaderMap) -> Response {
+    crate::web::serve_asset("index.html", &headers)
 }
 
-async fn static_files(Path(path): Path<String>) -> Response {
-    crate::web::serve_asset(&path)
+async fn static_files(Path(path): Path<String>, headers: HeaderMap) -> Response {
+    crate::web::serve_asset(&path, &headers)
 }
 
 #[derive(Deserialize)]

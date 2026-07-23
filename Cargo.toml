@@ -1,6 +1,6 @@
 [package]
 name = "content-sync"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "CLI to watch local files and bidirectionally sync raw content to SQL/Mongo databases"
 authors = ["content-sync"]

@@ -862,8 +862,8 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             no_sync,
             no_log,
         } => {
-            // Self-restart path: wait for previous process to exit so the port is free.
-            let from_restart = wait_for_restart_parent();
+            // Legacy spawn-restart: wait for previous PID (old clients). New path uses re-exec.
+            let from_restart = wait_for_restart_parent() || take_reexec_restart_marker();
 
             let mut settings = db.get_settings()?;
             if let Some(b) = bind {
@@ -895,6 +895,7 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             let addr = listener.local_addr()?;
 
             // After a Web UI restart (or if we already own the daemon pid), keep pid file updated.
+            // Re-exec keeps the same PID so the existing pid file remains valid.
             if from_restart {
                 if let Err(e) = config::write_daemon_pid(std::process::id()) {
                     warn!("could not write daemon pid after restart: {e}");
@@ -933,11 +934,56 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 }
             });
 
-            serve.await?;
+            // Cap drain time on Web UI restart so keep-alive / stuck requests cannot block re-bind forever.
+            let st_force = Arc::clone(&state);
+            let serve_result = tokio::select! {
+                r = serve => r,
+                _ = async move {
+                    // Wait until restart is requested, then allow a short drain window.
+                    loop {
+                        if st_force
+                            .restart_after_shutdown
+                            .load(std::sync::atomic::Ordering::SeqCst)
+                        {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    }
+                    // Match the API delay (~350ms) + drain budget.
+                    tokio::time::sleep(std::time::Duration::from_millis(350 + 2500)).await;
+                    warn!("restart: graceful drain timed out; forcing server stop to re-bind");
+                } => Ok(()),
+            };
+            serve_result?;
+
             if let Some(h) = sync_handle {
-                let _ = h.await;
+                // Don't block restart forever on a stuck sync task.
+                if state
+                    .restart_after_shutdown
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), h).await;
+                } else {
+                    let _ = h.await;
+                }
             }
-            // Clear pid file if this process was the daemon
+
+            let do_restart = state
+                .restart_after_shutdown
+                .load(std::sync::atomic::Ordering::SeqCst);
+            let restart_no_sync = state
+                .serve_no_sync
+                .load(std::sync::atomic::Ordering::SeqCst);
+            let restart_no_log = state.serve_no_log.load(std::sync::atomic::Ordering::SeqCst);
+            // Drop AppState / SQLite handles before re-exec so WAL can checkpoint.
+            drop(state);
+
+            if do_restart {
+                // Same PID continues after exec — leave daemon pid file intact.
+                reexec_serve(restart_no_sync, restart_no_log)?;
+            }
+
+            // Clear pid file if this process was the daemon (normal stop, not restart).
             if let Some(pid) = config::read_daemon_pid() {
                 if pid == std::process::id() {
                     config::remove_daemon_pid();
@@ -956,11 +1002,14 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
     }
 }
 
-/// Env set by Web UI self-restart: new process waits for this PID to exit before binding.
+/// Env set by legacy spawn-based Web UI restart: new process waits for this PID to exit.
 const RESTART_WAIT_PID_ENV: &str = "CONTENT_SYNC_WAIT_PID";
 
-/// If spawned for self-restart, block until the previous process exits (port free).
-/// Returns true when this process was started via restart.
+/// Marker set just before re-exec so the new image can log "(restarted…)".
+const REEXEC_RESTART_ENV: &str = "CONTENT_SYNC_REEXEC_RESTART";
+
+/// If spawned via legacy self-restart, block until the previous process exits (port free).
+/// Returns true when this process was started via that path.
 fn wait_for_restart_parent() -> bool {
     let Ok(s) = std::env::var(RESTART_WAIT_PID_ENV) else {
         return false;
@@ -984,21 +1033,52 @@ fn wait_for_restart_parent() -> bool {
     true
 }
 
-/// Spawn a detached `serve` that waits for `wait_pid` to exit, then binds with saved settings.
-/// Used by `POST /api/system/restart` so web_bind and other process-level settings apply.
-pub fn spawn_restart_process(wait_pid: u32, no_sync: bool, no_log: bool) -> anyhow::Result<()> {
+/// Consume the re-exec restart marker (if any).
+fn take_reexec_restart_marker() -> bool {
+    match std::env::var(REEXEC_RESTART_ENV) {
+        Ok(_) => {
+            let _ = std::env::remove_var(REEXEC_RESTART_ENV);
+            true
+        }
+        Err(_) => false,
+    }
+}
+
+/// Resolve the running binary path in a way that still works when the path on disk
+/// was replaced/unlinked (common after upgrades). On Linux use `/proc/self/exe`.
+fn current_executable() -> anyhow::Result<std::path::PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        // Prefer the real path for nicer `ps` / argv0; if unlinked, exec via /proc/self/exe.
+        if let Ok(link) = std::fs::read_link("/proc/self/exe") {
+            let raw = link.to_string_lossy();
+            let trimmed = raw.strip_suffix(" (deleted)").unwrap_or(raw.as_ref());
+            let path = std::path::PathBuf::from(trimmed);
+            if path.is_file() {
+                return Ok(path);
+            }
+            let proc = std::path::PathBuf::from("/proc/self/exe");
+            if proc.exists() {
+                return Ok(proc);
+            }
+        }
+    }
+    std::env::current_exe().map_err(|e| anyhow::anyhow!("cannot resolve current executable: {e}"))
+}
+
+/// Replace this process with a fresh `serve` (same PID). Used after graceful drain so
+/// `web_bind` and other process-level settings apply. Works as container PID 1.
+fn reexec_serve(no_sync: bool, no_log: bool) -> anyhow::Result<()> {
     #[cfg(not(unix))]
     {
-        let _ = (wait_pid, no_sync, no_log);
+        let _ = (no_sync, no_log);
         anyhow::bail!("process restart from Web UI is only supported on Unix");
     }
     #[cfg(unix)]
     {
-        let exe = std::env::current_exe()
-            .map_err(|e| anyhow::anyhow!("cannot resolve current executable: {e}"))?;
-        config::ensure_config_dir()?;
-        let log_path = config::background_log_path();
+        use std::os::unix::process::CommandExt;
 
+        let exe = current_executable()?;
         let mut cmd = std::process::Command::new(&exe);
         cmd.arg("serve");
         if no_sync {
@@ -1007,43 +1087,13 @@ pub fn spawn_restart_process(wait_pid: u32, no_sync: bool, no_log: bool) -> anyh
         if no_log {
             cmd.arg("--no-log");
         }
-        cmd.env(RESTART_WAIT_PID_ENV, wait_pid.to_string());
-        cmd.stdin(std::process::Stdio::null());
-
-        if no_log {
-            cmd.stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null());
-        } else {
-            let log_file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&log_path)
-                .map_err(|e| anyhow::anyhow!("cannot open log {}: {e}", log_path.display()))?;
-            let log_err = log_file
-                .try_clone()
-                .map_err(|e| anyhow::anyhow!("cannot clone log handle: {e}"))?;
-            cmd.stdout(std::process::Stdio::from(log_file))
-                .stderr(std::process::Stdio::from(log_err));
-        }
-
-        {
-            use std::os::unix::process::CommandExt;
-            unsafe {
-                cmd.pre_exec(|| {
-                    if libc::setsid() == -1 {
-                        return Err(std::io::Error::last_os_error());
-                    }
-                    Ok(())
-                });
-            }
-        }
-
-        let child = cmd
-            .spawn()
-            .map_err(|e| anyhow::anyhow!("failed to spawn restart process: {e}"))?;
-        // Detach — child waits for us, then becomes the new server.
-        std::mem::forget(child);
-        Ok(())
+        // Clear legacy wait-pid env if present; mark re-exec for banner/pid handling.
+        cmd.env_remove(RESTART_WAIT_PID_ENV);
+        cmd.env(REEXEC_RESTART_ENV, "1");
+        // Inherit stdin/stdout/stderr (terminal, docker logs, or background log file).
+        info!("re-exec serve for Web UI restart…");
+        let err = cmd.exec();
+        anyhow::bail!("failed to re-exec for restart ({}): {err}", exe.display());
     }
 }
 
@@ -1083,8 +1133,7 @@ fn start_background(bind: Option<String>, no_sync: bool, no_log: bool) -> anyhow
         config::remove_daemon_pid();
     }
 
-    let exe = std::env::current_exe()
-        .map_err(|e| anyhow::anyhow!("cannot resolve current executable: {e}"))?;
+    let exe = current_executable()?;
     let log_path = config::background_log_path();
     config::ensure_config_dir()?;
 

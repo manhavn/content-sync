@@ -405,7 +405,7 @@ scripts/registry-image-push.sh --to dockerhub,ghcr --skip-binary-build
 
 - Image already binds **`0.0.0.0:8080`** with **`--no-log`** (matches common Cloud Run container port).
 - Mount a volume at **`/data`** if you need persistent config / files.
-- **Web UI “Restart app”** self-restarts the process inside the container; on Cloud Run that can stop the instance — prefer **redeploy** for process-level changes in managed environments.
+- **Web UI “Restart app”** re-execs the same process (same PID) so `web_bind` and other process-level settings apply without killing the container. On fully managed platforms that ignore in-process re-bind, redeploy if the external port mapping must change.
 
 ## Quick start
 

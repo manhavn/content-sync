@@ -10,5 +10,5 @@ BIN="$ROOT/target/release/content-sync"
 $BIN quit
 sudo cp $BIN "/usr/local/bin"
 
-content-sync background --no-log
+content-sync background --no-log --bind 0.0.0.0:18790
 

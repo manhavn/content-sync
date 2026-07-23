@@ -404,7 +404,7 @@ scripts/registry-image-push.sh --to dockerhub,ghcr --skip-binary-build
 
 - Image đã bind **`0.0.0.0:8080`** kèm **`--no-log`** (khớp container port phổ biến trên Cloud Run).
 - Mount volume tại **`/data`** nếu cần giữ config / file.
-- Nút **Restart app** trên Web UI tự restart process trong container; trên Cloud Run có thể làm instance shutdown — môi trường managed nên **redeploy** khi cần thay đổi cấp process.
+- Nút **Restart app** trên Web UI re-exec cùng process (cùng PID) để áp dụng `web_bind` và các cài đặt cấp process mà không kill container. Trên nền tảng managed nếu map port bên ngoài không theo bind mới, hãy redeploy.
 
 ## Quick start
 

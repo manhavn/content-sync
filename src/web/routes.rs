@@ -315,8 +315,10 @@ async fn put_settings(
     Ok(Json(s))
 }
 
-/// Spawn a replacement `serve` process (waits for this PID to exit), then shut down.
-/// Applies process-level settings such as `web_bind` without manual CLI restart.
+/// Gracefully stop the HTTP server, then re-exec this process as `serve`.
+///
+/// Uses in-process re-exec (same PID) so restart works as Docker/Cloud Run PID 1
+/// and still applies process-level settings such as `web_bind`.
 async fn restart_app(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -329,18 +331,15 @@ async fn restart_app(
         ));
     }
 
-    let no_sync = state
-        .serve_no_sync
-        .load(std::sync::atomic::Ordering::SeqCst);
-    let no_log = state.serve_no_log.load(std::sync::atomic::Ordering::SeqCst);
     let web_bind = state
         .db
         .get_settings()
         .map_err(ApiError::internal)?
         .web_bind;
 
-    let wait_pid = std::process::id();
-    crate::cli::spawn_restart_process(wait_pid, no_sync, no_log).map_err(ApiError::internal)?;
+    // Flag first so the serve loop re-execs after drain (do not spawn a sibling process —
+    // that breaks containers where this binary is PID 1: exit of PID 1 kills the child).
+    state.request_restart_after_shutdown();
 
     let _ = state.db.log_sync(
         "info",

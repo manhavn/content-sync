@@ -44,6 +44,8 @@ pub struct AppState {
     pub serve_no_log: AtomicBool,
     /// Graceful shutdown for `serve` (API restart + signals)
     pub shutdown_tx: RwLock<Option<tokio::sync::watch::Sender<bool>>>,
+    /// After HTTP serve drains, re-exec this process as `serve` (Web UI Restart app).
+    pub restart_after_shutdown: AtomicBool,
 }
 
 impl AppState {
@@ -62,6 +64,7 @@ impl AppState {
             serve_no_sync: AtomicBool::new(false),
             serve_no_log: AtomicBool::new(false),
             shutdown_tx: RwLock::new(None),
+            restart_after_shutdown: AtomicBool::new(false),
         })
     }
 
@@ -77,6 +80,11 @@ impl AppState {
         } else {
             false
         }
+    }
+
+    /// Mark that this process should re-exec `serve` after the HTTP server stops.
+    pub fn request_restart_after_shutdown(&self) {
+        self.restart_after_shutdown.store(true, Ordering::SeqCst);
     }
 
     /// Drop in-memory state for a deleted connection (backoff, schema flag, remote hashes).

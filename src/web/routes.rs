@@ -268,6 +268,12 @@ struct SettingsUpdate {
     #[serde(default)]
     auto_poll: Option<bool>,
     #[serde(default)]
+    enable_pull: Option<bool>,
+    #[serde(default)]
+    enable_push: Option<bool>,
+    #[serde(default)]
+    enable_delete_extra: Option<bool>,
+    #[serde(default)]
     poll_interval_secs: Option<u64>,
     #[serde(default)]
     error_backoff_secs: Option<u64>,
@@ -294,6 +300,15 @@ async fn put_settings(
     }
     if let Some(v) = body.auto_poll {
         s.auto_poll = v;
+    }
+    if let Some(v) = body.enable_pull {
+        s.enable_pull = v;
+    }
+    if let Some(v) = body.enable_push {
+        s.enable_push = v;
+    }
+    if let Some(v) = body.enable_delete_extra {
+        s.enable_delete_extra = v;
     }
     if let Some(v) = body.poll_interval_secs {
         s.poll_interval_secs = v;

@@ -267,6 +267,15 @@ pub enum SettingsCmd {
         /// When false: initial sync + watcher + manual Sync still work; no timer cycle.
         #[arg(long)]
         auto_poll: Option<bool>,
+        /// Enable/disable pull operations (remote database -> local files). Default true.
+        #[arg(long)]
+        enable_pull: Option<bool>,
+        /// Enable/disable push operations (local files -> remote database). Default true.
+        #[arg(long)]
+        enable_push: Option<bool>,
+        /// Delete local files that do not exist on remote database during pull (true/false). Default false.
+        #[arg(long)]
+        enable_delete_extra: Option<bool>,
         #[arg(long)]
         poll_interval_secs: Option<u64>,
         #[arg(long)]
@@ -426,6 +435,18 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 } else {
                     String::new()
                 }
+            );
+            println!(
+                "Enable pull     : {}",
+                if s.enable_pull { "on" } else { "off" }
+            );
+            println!(
+                "Enable push     : {}",
+                if s.enable_push { "on" } else { "off" }
+            );
+            println!(
+                "Delete extra    : {}",
+                if s.enable_delete_extra { "on" } else { "off" }
             );
             println!("Poll interval  : {}s", s.poll_interval_secs);
             println!(
@@ -768,6 +789,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             SettingsCmd::Show => {
                 let s = db.get_settings()?;
                 println!("auto_poll               : {}", s.auto_poll);
+                println!("enable_pull             : {}", s.enable_pull);
+                println!("enable_push             : {}", s.enable_push);
+                println!("enable_delete_extra     : {}", s.enable_delete_extra);
                 println!("poll_interval_secs      : {}", s.poll_interval_secs);
                 println!("error_backoff_secs      : {}", s.error_backoff_secs);
                 println!("error_backoff_max_secs  : {}", s.error_backoff_max_secs);
@@ -779,6 +803,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
             }
             SettingsCmd::Set {
                 auto_poll,
+                enable_pull,
+                enable_push,
+                enable_delete_extra,
                 poll_interval_secs,
                 error_backoff_secs,
                 error_backoff_max_secs,
@@ -786,6 +813,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 web_bind,
             } => {
                 if auto_poll.is_none()
+                    && enable_pull.is_none()
+                    && enable_push.is_none()
+                    && enable_delete_extra.is_none()
                     && poll_interval_secs.is_none()
                     && error_backoff_secs.is_none()
                     && error_backoff_max_secs.is_none()
@@ -793,12 +823,21 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                     && web_bind.is_none()
                 {
                     anyhow::bail!(
-                        "pass at least one of --auto-poll --poll-interval-secs --error-backoff-secs --error-backoff-max-secs --log-retention-hours --web-bind"
+                        "pass at least one of --auto-poll --enable-pull --enable-push --enable-delete-extra --poll-interval-secs --error-backoff-secs --error-backoff-max-secs --log-retention-hours --web-bind"
                     );
                 }
                 let mut s = db.get_settings()?;
                 if let Some(v) = auto_poll {
                     s.auto_poll = v;
+                }
+                if let Some(v) = enable_pull {
+                    s.enable_pull = v;
+                }
+                if let Some(v) = enable_push {
+                    s.enable_push = v;
+                }
+                if let Some(v) = enable_delete_extra {
+                    s.enable_delete_extra = v;
                 }
                 if let Some(v) = poll_interval_secs {
                     s.poll_interval_secs = v;
@@ -818,6 +857,9 @@ pub async fn run(cli: Cli) -> anyhow::Result<()> {
                 db.save_settings(&s)?;
                 println!("Settings saved (web_bind needs serve restart if changed).");
                 println!("auto_poll               : {}", s.auto_poll);
+                println!("enable_pull             : {}", s.enable_pull);
+                println!("enable_push             : {}", s.enable_push);
+                println!("enable_delete_extra     : {}", s.enable_delete_extra);
                 println!("poll_interval_secs      : {}", s.poll_interval_secs);
                 println!("error_backoff_secs      : {}", s.error_backoff_secs);
                 println!("error_backoff_max_secs  : {}", s.error_backoff_max_secs);

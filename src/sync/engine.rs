@@ -254,54 +254,70 @@ pub async fn sync_once(state: &AppState) -> Result<()> {
     for conn in &active {
         let watch_dir = PathBuf::from(&conn.watch_dir);
         // Pull remote → this connection's directory only
-        match pull_connection(state, conn, &watch_dir).await {
-            Ok((n, hashes)) => {
-                state.clear_backoff(&conn.id);
-                state.set_status(format!(
-                    "[{}] dir={} table={} pull: wrote {n} local, {} remote row(s)",
-                    conn.name,
-                    conn.watch_dir,
-                    conn.table_name,
-                    hashes.len()
-                ));
-                remote_state.insert(conn.id.clone(), hashes);
-                let _ = state
-                    .db
-                    .set_connection_status(&conn.id, None, Some(&now_rfc3339()));
+        if settings.enable_pull {
+            match pull_connection(state, conn, &watch_dir).await {
+                Ok((n, hashes)) => {
+                    state.clear_backoff(&conn.id);
+                    state.set_status(format!(
+                        "[{}] dir={} table={} pull: wrote {n} local, {} remote row(s)",
+                        conn.name,
+                        conn.watch_dir,
+                        conn.table_name,
+                        hashes.len()
+                    ));
+                    remote_state.insert(conn.id.clone(), hashes);
+                    let _ = state
+                        .db
+                        .set_connection_status(&conn.id, None, Some(&now_rfc3339()));
+                }
+                Err(e) => {
+                    let delay = state.register_failure(&conn.id, &settings);
+                    state.set_error(format!(
+                        "[{}] pull failed: {e} — backoff {}s",
+                        conn.name,
+                        delay.as_secs()
+                    ));
+                    let _ = state
+                        .db
+                        .set_connection_status(&conn.id, Some(&e.to_string()), None);
+                    continue;
+                }
             }
-            Err(e) => {
-                let delay = state.register_failure(&conn.id, &settings);
-                state.set_error(format!(
-                    "[{}] pull failed: {e} — backoff {}s",
-                    conn.name,
-                    delay.as_secs()
-                ));
-                let _ = state
-                    .db
-                    .set_connection_status(&conn.id, Some(&e.to_string()), None);
-                continue;
-            }
+        } else {
+            info!(
+                "[{}] pull disabled by settings — skipping remote pull",
+                conn.name
+            );
         }
 
         if state.is_in_backoff(&conn.id) {
             continue;
         }
 
-        let local_files = scan_files(&watch_dir)?;
-        total_local += local_files.len();
-        for path in &local_files {
-            match push_file_to_all(
-                state,
-                path,
-                std::slice::from_ref(conn),
-                &settings,
-                Some(&remote_state),
-            )
-            .await
-            {
-                Ok(n) => pushed += n,
-                Err(e) => state.set_error(format!("[{}] push {}: {e}", conn.name, path.display())),
+        if settings.enable_push {
+            let local_files = scan_files(&watch_dir)?;
+            total_local += local_files.len();
+            for path in &local_files {
+                match push_file_to_all(
+                    state,
+                    path,
+                    std::slice::from_ref(conn),
+                    &settings,
+                    Some(&remote_state),
+                )
+                .await
+                {
+                    Ok(n) => pushed += n,
+                    Err(e) => {
+                        state.set_error(format!("[{}] push {}: {e}", conn.name, path.display()))
+                    }
+                }
             }
+        } else {
+            info!(
+                "[{}] push disabled by settings — skipping push to remote",
+                conn.name
+            );
         }
     }
 
@@ -310,12 +326,19 @@ pub async fn sync_once(state: &AppState) -> Result<()> {
     } else {
         String::new()
     };
+    let mode_note = match (settings.enable_pull, settings.enable_push) {
+        (true, true) => String::new(),
+        (false, true) => " [pull disabled]".to_string(),
+        (true, false) => " [push disabled]".to_string(),
+        (false, false) => " [pull+push disabled]".to_string(),
+    };
     state.set_status(format!(
-        "Sync complete — {} connection(s), {} local file(s) scanned, {} push(es){}",
+        "Sync complete — {} connection(s), {} local file(s) scanned, {} push(es){}{}",
         active.len(),
         total_local,
         pushed,
-        skipped_note
+        skipped_note,
+        mode_note
     ));
     Ok(())
 }
@@ -357,6 +380,10 @@ async fn pull_connection(
     conn: &Connection,
     watch_dir: &Path,
 ) -> Result<(usize, HashMap<String, String>)> {
+    let settings = state.db.get_settings().unwrap_or_default();
+    if !settings.enable_pull {
+        return Ok((0, HashMap::new()));
+    }
     ensure_schema_once(state, conn).await?;
     let remote_files = remote::list_files(conn).await?;
     let mut updated = 0usize;
@@ -413,6 +440,35 @@ async fn pull_connection(
 
         state.db.upsert_file_cache(&rec)?;
     }
+
+    if settings.enable_delete_extra {
+        if let Ok(local_files) = scan_files(watch_dir) {
+            for path in local_files {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if !remote_hashes.contains_key(name) {
+                        let h = read_local_hash(&path).unwrap_or_default();
+                        state.suppress_paths.write().insert(path.clone(), h);
+                        state.last_seen_hash.write().remove(&path);
+                        state
+                            .last_pushed_hash
+                            .write()
+                            .remove(&(conn.id.clone(), name.to_string()));
+                        let _ = state.db.delete_file_cache(&conn.id, name);
+                        if let Err(e) = std::fs::remove_file(&path) {
+                            warn!("failed to delete extra local file {}: {e}", path.display());
+                        } else {
+                            info!(
+                                "[{}] deleted extra local file (not on remote): {}",
+                                conn.name,
+                                path.display()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok((updated, remote_hashes))
 }
 
@@ -428,6 +484,9 @@ async fn push_file_to_all(
     settings: &Settings,
     remote_state: Option<&HashMap<String, HashMap<String, String>>>,
 ) -> Result<usize> {
+    if !settings.enable_push {
+        return Ok(0);
+    }
     let mut rec = read_file_record(path)?;
     let hash = rec.content_hash.clone();
 
@@ -721,6 +780,18 @@ async fn handle_file_events(state: &AppState, events: Vec<TokenFileEvent>) {
                         .remove(&(id.clone(), rec.file_name.clone()));
                 }
 
+                if !settings.enable_push {
+                    info!(
+                        "file change detected on {}, but push is disabled",
+                        path.display()
+                    );
+                    for id in &owner_ids {
+                        rec.connection_id = Some(id.clone());
+                        let _ = state.db.upsert_file_cache(&rec);
+                    }
+                    continue;
+                }
+
                 match push_file_to_all(state, &path, &owners, &settings, None).await {
                     Ok(n) => {
                         state.set_status(format!(
@@ -760,21 +831,23 @@ async fn handle_file_events(state: &AppState, events: Vec<TokenFileEvent>) {
                 state.set_status(format!("file removed: {name}"));
                 for id in &owner_ids {
                     let _ = state.db.delete_file_cache(id, name);
-                    if let Some(conn) = all_enabled.iter().find(|c| c.id == *id) {
-                        if state.is_in_backoff(&conn.id) {
-                            continue;
+                    if settings.enable_push {
+                        if let Some(conn) = all_enabled.iter().find(|c| c.id == *id) {
+                            if state.is_in_backoff(&conn.id) {
+                                continue;
+                            }
+                            if let Err(e) = ensure_schema_once(state, conn).await {
+                                warn!("schema [{}] on delete: {e}", conn.name);
+                                continue;
+                            }
+                            if let Err(e) = remote::delete_file(conn, name).await {
+                                warn!("remote delete {} on [{}]: {e}", name, conn.name);
+                            }
+                            state
+                                .last_pushed_hash
+                                .write()
+                                .remove(&(conn.id.clone(), name.to_string()));
                         }
-                        if let Err(e) = ensure_schema_once(state, conn).await {
-                            warn!("schema [{}] on delete: {e}", conn.name);
-                            continue;
-                        }
-                        if let Err(e) = remote::delete_file(conn, name).await {
-                            warn!("remote delete {} on [{}]: {e}", name, conn.name);
-                        }
-                        state
-                            .last_pushed_hash
-                            .write()
-                            .remove(&(conn.id.clone(), name.to_string()));
                     }
                 }
             }
@@ -812,7 +885,7 @@ pub async fn write_and_push(
         .remove(&(conn.id.clone(), file_name.clone()));
     std::fs::write(&path, content)?;
 
-    if conn.enabled && !state.is_in_backoff(&conn.id) {
+    if settings.enable_push && conn.enabled && !state.is_in_backoff(&conn.id) {
         let n =
             push_file_to_all(state, &path, std::slice::from_ref(&conn), &settings, None).await?;
         info!(
@@ -880,8 +953,8 @@ pub async fn delete_local_and_remote(
         std::fs::remove_file(&path)?;
     }
 
-    if conn.enabled && !state.is_in_backoff(&conn.id) {
-        let settings = state.db.get_settings()?;
+    let settings = state.db.get_settings()?;
+    if settings.enable_push && conn.enabled && !state.is_in_backoff(&conn.id) {
         if let Err(e) = ensure_schema_once(state, &conn).await {
             let delay = state.register_failure(&conn.id, &settings);
             warn!(

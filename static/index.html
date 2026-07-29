@@ -239,6 +239,27 @@
               <p class="muted small" data-i18n="label_auto_poll_hint">
                 When off: still syncs once at startup, on file changes (watcher), and on Sync now. Setting is saved and kept after restart.
               </p>
+              <label class="check-row" for="set-enable-pull">
+                <input id="set-enable-pull" type="checkbox" checked />
+                <span data-i18n="label_enable_pull">Enable pull (sync remote database to local)</span>
+              </label>
+              <p class="muted small" data-i18n="label_enable_pull_hint">
+                When off: system will never pull data from remote database to local files.
+              </p>
+              <label class="check-row" for="set-enable-push">
+                <input id="set-enable-push" type="checkbox" checked />
+                <span data-i18n="label_enable_push">Enable push (sync local files to remote database)</span>
+              </label>
+              <p class="muted small" data-i18n="label_enable_push_hint">
+                When off: system will never push local file data to remote database.
+              </p>
+              <label class="check-row" for="set-enable-delete-extra">
+                <input id="set-enable-delete-extra" type="checkbox" />
+                <span data-i18n="label_enable_delete_extra">Delete extra local files (files not on remote DB)</span>
+              </label>
+              <p class="muted small" data-i18n="label_enable_delete_extra_hint">
+                When on: during pull, any local file in watched directories that does not exist on remote database will be automatically deleted locally.
+              </p>
               <label data-i18n="label_poll">Poll interval (seconds) — periodic pull when healthy</label>
               <input id="set-poll" type="number" min="5" />
               <label data-i18n="label_backoff">Error backoff base (seconds)</label>

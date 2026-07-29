@@ -130,6 +130,15 @@ const I18N = {
     label_auto_poll: "Automatic poll cycle (pull + push on a timer)",
     label_auto_poll_hint:
       "When off: still syncs once at startup, on file changes (watcher), and on Sync now. Setting is saved and kept after restart.",
+    label_enable_pull: "Enable pull (sync remote database to local)",
+    label_enable_pull_hint:
+      "When off: system will never pull data from remote database to local files (including manual Sync now).",
+    label_enable_push: "Enable push (sync local files to remote database)",
+    label_enable_push_hint:
+      "When off: system will never push local file data to remote database (including manual Sync now).",
+    label_enable_delete_extra: "Delete extra local files (files not on remote DB)",
+    label_enable_delete_extra_hint:
+      "When on: during pull, any local file in watched directories that does not exist on remote database will be automatically deleted locally.",
     label_poll: "Poll interval (seconds) — periodic pull when healthy",
     label_backoff: "Error backoff base (seconds) — wait longer after remote failures (rate limit)",
     label_backoff_max: "Error backoff max (seconds) — exponential backoff cap",
@@ -303,6 +312,15 @@ const I18N = {
     label_auto_poll: "Chu kỳ poll tự động (pull + push theo timer)",
     label_auto_poll_hint:
       "Khi tắt: vẫn sync một lần lúc khởi động, khi file đổi (watcher), và khi bấm Sync now. Cài đặt được lưu và giữ sau khi restart.",
+    label_enable_pull: "Bật pull (đồng bộ remote database về local)",
+    label_enable_pull_hint:
+      "Khi tắt: hệ thống không bao giờ được phép pull dữ liệu từ remote database về local (kể cả bấm Sync now).",
+    label_enable_push: "Bật push (đồng bộ local vào remote database)",
+    label_enable_push_hint:
+      "Khi tắt: hệ thống không bao giờ được phép đồng bộ dữ liệu local vào database (kể cả bấm Sync now).",
+    label_enable_delete_extra: "Tự động xoá file local thừa (file không có trên DB)",
+    label_enable_delete_extra_hint:
+      "Khi bật: trong quá trình pull, bất kỳ file local nào nằm trong thư mục sync mà không tồn tại trên remote database sẽ bị xoá khỏi local.",
     label_poll: "Poll interval (giây) — pull định kỳ khi healthy",
     label_backoff: "Error backoff base (giây) — chờ lâu hơn khi remote fail (tránh rate limit)",
     label_backoff_max: "Error backoff max (giây) — trần exponential backoff",

@@ -191,6 +191,21 @@ impl ConfigDb {
                 .as_deref()
                 .map(parse_bool_setting)
                 .unwrap_or(defaults.auto_poll),
+            enable_pull: self
+                .get_setting("enable_pull")?
+                .as_deref()
+                .map(parse_bool_setting)
+                .unwrap_or(defaults.enable_pull),
+            enable_push: self
+                .get_setting("enable_push")?
+                .as_deref()
+                .map(parse_bool_setting)
+                .unwrap_or(defaults.enable_push),
+            enable_delete_extra: self
+                .get_setting("enable_delete_extra")?
+                .as_deref()
+                .map(parse_bool_setting)
+                .unwrap_or(defaults.enable_delete_extra),
             poll_interval_secs: self
                 .get_setting("poll_interval_secs")?
                 .and_then(|s| s.parse().ok())
@@ -215,6 +230,16 @@ impl ConfigDb {
         self.set_setting("watch_dir", &s.watch_dir)?;
         self.set_setting("default_files_root", &s.default_files_root)?;
         self.set_setting("auto_poll", if s.auto_poll { "true" } else { "false" })?;
+        self.set_setting("enable_pull", if s.enable_pull { "true" } else { "false" })?;
+        self.set_setting("enable_push", if s.enable_push { "true" } else { "false" })?;
+        self.set_setting(
+            "enable_delete_extra",
+            if s.enable_delete_extra {
+                "true"
+            } else {
+                "false"
+            },
+        )?;
         self.set_setting("poll_interval_secs", &s.poll_interval_secs.to_string())?;
         self.set_setting("error_backoff_secs", &s.error_backoff_secs.to_string())?;
         self.set_setting(

@@ -446,6 +446,15 @@ pub struct Settings {
     /// Persisted in config-sqlite; survives restarts. Default true.
     #[serde(default = "default_auto_poll")]
     pub auto_poll: bool,
+    /// Enable pull operation (remote database -> local files). Default true.
+    #[serde(default = "default_enable_pull")]
+    pub enable_pull: bool,
+    /// Enable push operation (local files -> remote database). Default true.
+    #[serde(default = "default_enable_push")]
+    pub enable_push: bool,
+    /// Delete local files that do not exist on remote database during pull. Default false.
+    #[serde(default = "default_enable_delete_extra")]
+    pub enable_delete_extra: bool,
     /// Normal poll interval when connections are healthy (used only if `auto_poll` is true)
     pub poll_interval_secs: u64,
     /// Base backoff (seconds) after a failed remote call; doubles each failure up to max
@@ -462,6 +471,15 @@ pub struct Settings {
 
 fn default_auto_poll() -> bool {
     true
+}
+fn default_enable_pull() -> bool {
+    true
+}
+fn default_enable_push() -> bool {
+    true
+}
+fn default_enable_delete_extra() -> bool {
+    false
 }
 fn default_error_backoff_secs() -> u64 {
     120
@@ -486,6 +504,9 @@ impl Default for Settings {
             default_files_root: root.clone(),
             watch_dir: root,
             auto_poll: default_auto_poll(),
+            enable_pull: default_enable_pull(),
+            enable_push: default_enable_push(),
+            enable_delete_extra: default_enable_delete_extra(),
             poll_interval_secs: 30,
             error_backoff_secs: default_error_backoff_secs(),
             error_backoff_max_secs: default_error_backoff_max_secs(),

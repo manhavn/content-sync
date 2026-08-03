@@ -179,7 +179,32 @@ input[type="checkbox"]:focus { box-shadow: 0 0 0 3px rgba(61,139,253,0.25); }
 .btn.danger { background: rgba(243,18,96,0.15); border-color: rgba(243,18,96,0.4); color: #ff6b9a; }
 .btn.sm { padding: 4px 10px; font-size: 12px; }
 .btn.full { width: 100%; }
-.btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.btn-row { display: flex; gap: 6px; }
+.btn:disabled, .btn[disabled] {
+  opacity: 0.6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.btn.is-loading {
+  min-width: 90px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 0.75s linear infinite;
+  vertical-align: middle;
+}
+@keyframes btn-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
 
 /* Stats */
 .grid.stats {

@@ -25,6 +25,7 @@ struct ConnBackoff {
 pub struct AppState {
     pub db: ConfigDb,
     pub running: AtomicBool,
+    pub is_syncing: AtomicBool,
     pub last_sync_message: RwLock<Option<String>>,
     pub last_sync_at: RwLock<Option<String>>,
     /// Prevent echo: when we write a file from remote, skip next push
@@ -53,6 +54,7 @@ impl AppState {
         Arc::new(Self {
             db,
             running: AtomicBool::new(false),
+            is_syncing: AtomicBool::new(false),
             last_sync_message: RwLock::new(None),
             last_sync_at: RwLock::new(None),
             suppress_paths: RwLock::new(HashMap::new()),
@@ -132,6 +134,7 @@ impl AppState {
         SyncStatus {
             watch_dirs,
             running: self.running.load(Ordering::SeqCst),
+            is_syncing: self.is_syncing.load(Ordering::SeqCst),
             local_file_count: local_count,
             connections_enabled: conns.len(),
             last_sync_message: self.last_sync_message.read().clone(),
@@ -172,14 +175,19 @@ impl AppState {
             next_ok_at: Instant::now(),
         });
         entry.failures = entry.failures.saturating_add(1);
-        let exp = (entry.failures - 1).min(8);
-        let delay_secs = base.saturating_mul(1u64 << exp).min(max);
+        let delay_secs = if entry.failures == 1 {
+            // First failure (e.g. initial connection / test database failure on app start): retry once after 1 minute (60s)
+            60
+        } else {
+            let exp = (entry.failures - 2).min(8);
+            base.saturating_mul(1u64 << exp).min(max)
+        };
         let delay = Duration::from_secs(delay_secs);
         entry.next_ok_at = Instant::now() + delay;
         delay
     }
 
-    fn max_backoff_remaining(&self) -> Duration {
+    fn min_backoff_remaining(&self) -> Duration {
         let now = Instant::now();
         self.backoff
             .read()
@@ -191,7 +199,7 @@ impl AppState {
                     None
                 }
             })
-            .max()
+            .min()
             .unwrap_or(Duration::ZERO)
     }
 
@@ -201,8 +209,22 @@ impl AppState {
     }
 }
 
+struct SyncGuard<'a>(&'a AtomicBool);
+impl<'a> SyncGuard<'a> {
+    fn new(flag: &'a AtomicBool) -> Self {
+        flag.store(true, Ordering::SeqCst);
+        Self(flag)
+    }
+}
+impl<'a> Drop for SyncGuard<'a> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
 /// Full bidirectional sync once — each connection uses its own watch_dir + table.
 pub async fn sync_once(state: &AppState) -> Result<()> {
+    let _guard = SyncGuard::new(&state.is_syncing);
     let settings = state.db.get_settings()?;
     if let Ok(n) = state.db.purge_old_sync_logs(settings.log_retention_hours) {
         if n > 0 {
@@ -611,9 +633,12 @@ fn next_poll_delay(state: &AppState, settings: &Settings) -> Duration {
     if !state.any_in_backoff() {
         return healthy;
     }
-    let remaining = state.max_backoff_remaining();
-    let min_error = Duration::from_secs(settings.error_backoff_secs.max(30));
-    remaining.max(healthy).max(min_error)
+    let remaining = state.min_backoff_remaining();
+    if remaining.is_zero() {
+        healthy
+    } else {
+        remaining.min(healthy).max(Duration::from_secs(1))
+    }
 }
 
 /// Background loop: watch files + periodic pull
@@ -978,4 +1003,45 @@ pub async fn delete_local_and_remote(
 /// Clear all connection backoffs (e.g. after manual Sync now from UI).
 pub fn clear_all_backoffs(state: &AppState) {
     state.backoff.write().clear();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_initial_failure_backoff_one_minute() {
+        let temp_dir = std::env::temp_dir().join(format!("test-cs-{}", uuid::Uuid::new_v4()));
+        let db_path = temp_dir.join("test-config-db");
+        let db = ConfigDb::open(&db_path).unwrap();
+        let state = AppState::new(db);
+        let settings = Settings {
+            error_backoff_secs: 120,
+            error_backoff_max_secs: 900,
+            ..Default::default()
+        };
+
+        // 1st failure -> 60s (1 minute)
+        let delay1 = state.register_failure("conn1", &settings);
+        assert_eq!(delay1.as_secs(), 60);
+        assert!(state.is_in_backoff("conn1"));
+
+        // 2nd failure -> base error_backoff_secs (120s)
+        let delay2 = state.register_failure("conn1", &settings);
+        assert_eq!(delay2.as_secs(), 120);
+
+        // 3rd failure -> 240s
+        let delay3 = state.register_failure("conn1", &settings);
+        assert_eq!(delay3.as_secs(), 240);
+
+        // Clear backoff
+        state.clear_backoff("conn1");
+        assert!(!state.is_in_backoff("conn1"));
+
+        // Next failure after clear -> back to 60s (1 minute)
+        let delay_after_clear = state.register_failure("conn1", &settings);
+        assert_eq!(delay_after_clear.as_secs(), 60);
+
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
 }

@@ -8,7 +8,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$ROOT/target/release/content-sync"
 
 $BIN quit
-sudo cp $BIN "/usr/local/bin"
 
-content-sync background --no-log --bind 0.0.0.0:18790
+content-sync quit
+sudo content-sync quit
+
+sudo cp $BIN "/usr/local/bin"
+sudo content-sync background --no-log --bind 0.0.0.0:18790
 

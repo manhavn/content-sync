@@ -402,6 +402,7 @@ function applyI18n(root = document) {
   root.querySelectorAll("[data-i18n]").forEach((el) => {
     const key = el.getAttribute("data-i18n");
     if (!key) return;
+    if (el.disabled || el.classList.contains("is-loading")) return;
     const html = el.hasAttribute("data-i18n-html");
     if (html) el.innerHTML = t(key);
     else el.textContent = t(key);

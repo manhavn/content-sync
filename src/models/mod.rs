@@ -427,6 +427,7 @@ pub struct SyncStatus {
     /// Summary of watched dirs (from enabled connections)
     pub watch_dirs: Vec<String>,
     pub running: bool,
+    pub is_syncing: bool,
     pub local_file_count: usize,
     pub connections_enabled: usize,
     pub last_sync_message: Option<String>,

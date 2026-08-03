@@ -467,10 +467,28 @@ async function refreshAll() {
   await loadDashboard();
 }
 
+function updateSyncButtonState(isSyncing) {
+  const btn = $("#btn-sync");
+  if (!btn) return;
+  if (isSyncing) {
+    btn.disabled = true;
+    btn.classList.add("is-loading");
+    btn.innerHTML = `<span class="btn-spinner" aria-hidden="true"></span>`;
+  } else if (!btn.dataset.manualSyncing) {
+    btn.disabled = false;
+    btn.classList.remove("is-loading");
+    btn.textContent = t("sync_now");
+  }
+}
+
 // ── Dashboard ─────────────────────────────────────────────────
 async function loadDashboard() {
   try {
     const s = await api("/api/status");
+    updateSyncButtonState(s.is_syncing);
+    if (s.is_syncing) {
+      setTimeout(loadDashboard, 1000);
+    }
     const watchDirs = (s.watch_dirs || []).join(" · ") || "—";
     const lastMsg = s.last_sync_message || "";
     const engineVal = s.running ? t("stat_running") : t("stat_idle");
@@ -518,11 +536,19 @@ function renderLogsPage() {
 }
 
 $("#btn-sync").onclick = async () => {
+  const btn = $("#btn-sync");
+  if (btn.disabled) return;
+  btn.dataset.manualSyncing = "true";
+  updateSyncButtonState(true);
   try {
     await api("/api/sync", { method: "POST" });
     toast(t("sync_done"));
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    delete btn.dataset.manualSyncing;
     await loadDashboard();
-  } catch (e) { toast(e.message, true); }
+  }
 };
 
 // ── Files (raw content, per-connection) ───────────────────────
